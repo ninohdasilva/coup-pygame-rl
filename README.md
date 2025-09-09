@@ -13,6 +13,7 @@ A Python implementation of the board game "Coup" using Pygame, with AI agents le
 - Adjustable simulation speed
 - Training statistics display
 - Card reveal functionality for debugging
+- Card assets from [KenneyNL](http://kenney.nl/)
 
 ## Prerequisites
 
