@@ -13,40 +13,18 @@ A Python implementation of the board game "Coup" using Pygame, with AI agents le
 - Adjustable simulation speed
 - Training statistics display
 - Card reveal functionality for debugging
-- Card assets from [KenneyNL](http://kenney.nl/)
 
 ## Prerequisites
 
 - Python 3.12 or higher
 - [uv](https://github.com/astral-sh/uv) package manager
 
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/coup-pygame-rl.git
-cd coup-pygame-rl
-```
-
-2. Create and activate a virtual environment using uv:
-```bash
-uv venv
-source .venv/bin/activate  # On Unix/macOS
-# or
-.venv\Scripts\activate  # On Windows
-```
-
-3. Install dependencies using uv:
-```bash
-uv pip install .
-```
-
 ## Running the Simulation
 
 To start the simulation:
 
 ```bash
-python src/simulation.py
+uv run src/simulation.py
 ```
 
 ## Game Controls
@@ -80,10 +58,6 @@ coup-pygame-rl/
 - torch (2.8.0+): Machine learning framework
 - pydantic (2.11.7+): Data validation
 
-## License
+## Credits
 
-This project is licensed under the terms of the LICENSE file included in the repository.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+- Card assets from [KenneyNL](http://kenney.nl/)
