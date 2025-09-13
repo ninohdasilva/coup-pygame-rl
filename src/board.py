@@ -1,10 +1,15 @@
 import random
+import numpy as np
+from action import Action, ActionType
+from character import Character
 from player import Player
 from deck import Deck
+from agent import CoupAgent
 
 class Board:
     nb_players: int
     players: list[Player]
+    agents: list[CoupAgent]
     alive_players: list[Player]
     next_player: Player
     deck: Deck
@@ -14,6 +19,7 @@ class Board:
     def __init__(self, nb_players: int=4):
         self.nb_players = nb_players
         self.players = []
+        self.agents = []
         self.next_player = None
         self.game_has_started = False
         self.game_has_ended = True
@@ -30,6 +36,7 @@ class Board:
             player = Player(id=i, name=f"Player {i}", hand=[self.deck.draw() for _ in range(2)], coins=2, can_coup=False, must_coup=False, is_alive=True, nb_remaining_cards=2)
             self.players.append(player)
         self.alive_players = self.players.copy()
+        self.agents = [CoupAgent(i) for i in range(self.nb_players)]
         self.next_player = random.choice(self.alive_players)
 
     def player_try_action(self, player: Player, last_actions: list[str]):
@@ -67,8 +74,43 @@ class Board:
             last_actions.pop(0)
         return last_actions
 
-    def update_state(self):
-        pass
+    def update_states(self, last_actions: list[Action]):
+        """Convert the game state into a numerical representation"""
+        for agent in self.agents:
+            state = []
+            player = self.players[agent.player_id]
+            
+            # Encode own cards (2 cards x 5 characters + 2 revealed flags)
+            for card in player.hand:
+                # One-hot encoding for character type
+                for char in Character:
+                    state.append(1 if card.character == char else 0)
+            # Add revealed status for both cards
+            state.append(1 if player.hand[0].is_revealed else 0)
+            state.append(1 if player.hand[1].is_revealed else 0)
+                
+            # Encode own coins
+            state.append(player.coins)
+            
+            # Encode other players' information
+            for other_player in self.players:
+                if other_player != player:
+                    # Encode their cards (only if revealed)
+                    for card in other_player.hand:
+                        for char in Character:
+                            # Only see character if card is revealed
+                            state.append(1 if (card.is_revealed and card.character == char) else 0)
+                    # Add revealed status for both cards
+                    state.append(1 if other_player.hand[0].is_revealed else 0)
+                    state.append(1 if other_player.hand[1].is_revealed else 0)
+                    # Encode their coins
+                    state.append(other_player.coins)
+            
+            # Encode last actions
+            for action in last_actions:
+                pass
+            
+            agent.state = np.array(state, dtype=int)
 
     def check_if_game_has_ended(self):
         # Get players who are still in the game (have at least one unrevealed card)
@@ -120,4 +162,44 @@ class Board:
                 self.next_player = self.players[next_position]
                 break
         
+        return last_actions
+
+    def execute_action(self, player: Player, action: Action, last_actions: list[str]):
+        if not action.can_be_countered:
+            # Revenue
+            if action.action_type == ActionType.REVENUE:
+                player.action_revenue()
+                last_actions.append(f"{player.name} collected 1 coin with revenue")
+            # Coup
+            elif action.action_type == ActionType.COUP:
+                target_player = self.players[action.target_player_id]
+                player.action_coup(target_player)
+                last_actions.append(f"{player.name} launched a Coup on {target_player.name}")
+        # else:
+        # TODO
+        # if action.can_be_challenged:
+        #     TODO (recursive method ?)
+        # if action.can_be_countered:
+        #     if action.action_type == ActionType.FOREIGN_AID:
+        #         counters = [get_desired_action(self) for agent in self.agents if agent.player_id != player.id]
+        #         counters = [action for action in counters if action.action_type == ActionType.COUNTER_FOREIGN_AID_WITH_DUKE]
+        #         if counters:
+        #             TODO (recursive method ?)
+    
+        #         else:
+        #             player.action_foreign_aid()
+        #             last_actions.append(f"{player.name} collected 2 coins with foreign aid")
+    
+    def agents_next_move(self, last_actions: list[str]):
+        # Get current player and their agent
+        current_player = self.next_player
+        current_agent = self.agents[current_player.id]
+        
+        # Get state and desired action from agent
+        desired_action = current_agent.get_desired_action(self)
+
+        # Execute action and update states
+        last_actions = self.execute_action(current_player, desired_action, last_actions)
+        self.update_states(last_actions)
+
         return last_actions

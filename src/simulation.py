@@ -5,7 +5,6 @@ from card import Card
 from character import Character
 from deck import Deck
 from player import Player
-from agent import CoupAgent
 
 pygame.init()
 
@@ -13,6 +12,7 @@ pygame.init()
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 800
 BOARD_TOP = 200
+LAST_ACTIONS_MAX_LENGTH = 3
 
 # Colors
 COLORS = {
@@ -48,9 +48,8 @@ total_score = 0
 record = 0
 n_games = 0
 
-# Board and agents setup
+# Board setup
 board = Board()
-agents = [CoupAgent(i) for i in range(4)]
 board_zone_rect = pygame.Rect(0, BOARD_TOP, WINDOW_WIDTH, WINDOW_HEIGHT - BOARD_TOP)
 card_width = 100  # Slightly larger cards
 card_height = 100
@@ -144,6 +143,43 @@ def display_start_menu(screen: pygame.Surface):
     if is_hover and pygame.mouse.get_pressed()[0]:
         is_active = True
         board.start()
+    
+def display_game_over(screen: pygame.Surface):
+    global last_actions, n_games
+    overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 128))  # Semi-transparent black
+    screen.blit(overlay, (0, 0))
+    
+    # Get the winner (the only player with unrevealed cards)
+    winner = next(p for p in board.players if p.is_alive)
+    
+    # Draw winner announcement
+    text = f"{winner.name} Wins!"
+    for i in range(3):  # Create a glowing effect
+        text_surface = title_font.render(text, True, 
+                                        tuple(min(255, c + i*20) for c in COLORS['next_player']))
+        text_rect = text_surface.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - i*2))
+        screen.blit(text_surface, text_rect)
+    
+    # Draw restart button
+    restart_button = pygame.Rect(WINDOW_WIDTH//2 - BUTTON_WIDTH//2,
+                                WINDOW_HEIGHT//2 + 50,
+                                BUTTON_WIDTH,
+                                BUTTON_HEIGHT)
+    mouse_pos = pygame.mouse.get_pos()
+    is_hover = restart_button.collidepoint(mouse_pos)
+    draw_button(screen, restart_button, "New Game", False, is_hover)
+    
+    if is_hover and pygame.mouse.get_pressed()[0]:
+        # Clear the screen before restarting
+        screen.fill(COLORS['background'])
+        pygame.display.update()
+        # Reset game state
+        last_actions = []
+        board.start()
+        
+        # Update training metrics
+        n_games += 1
 
 def display_reveal_cards_button(screen: pygame.Surface, reveal_cards_button_rect: pygame.Rect):
     mouse_pos = pygame.mouse.get_pos()
@@ -295,6 +331,19 @@ def display_deck(screen: pygame.Surface, deck: Deck, x: int, y: int):
         # Only display the top card of the deck
         display_card(screen, deck.deck[-1], x, y, reveal_card=False)
 
+def display_board_background(screen: pygame.Surface):
+    pygame.draw.rect(screen, COLORS['board'], board_zone_rect)
+    
+    # Add a subtle pattern to the board
+    pattern_size = 20
+    for x in range(0, WINDOW_WIDTH, pattern_size):
+        for y in range(BOARD_TOP, WINDOW_HEIGHT, pattern_size):
+            if (x + y) % (pattern_size * 2) == 0:
+                pattern_rect = pygame.Rect(x, y, pattern_size, pattern_size)
+                pygame.draw.rect(screen, 
+                                tuple(max(0, c - 5) for c in COLORS['board']), 
+                                pattern_rect)
+
 def display_board(board: Board):
     screen.fill((255, 255, 255), board_zone_rect)
     # Position deck in the center of the board zone
@@ -342,62 +391,16 @@ while running:
                 next_index = (current_index + 1) % len(moves_per_second_options)
                 moves_per_second = moves_per_second_options[next_index]
                 pygame.time.set_timer(move_timer, int(1000 / moves_per_second))
+
+        # Running game logic
         elif event.type == move_timer and is_active and not board.game_has_ended:
-            # Get current player and their agent
-            current_player = board.next_player
-            current_agent = agents[current_player.id]
-            
-            # Get state and action from agent
-            state = current_agent.get_state(board)
-            action_type, target_id, card_to_reveal = current_agent.get_action(state, board)
-            
-            # Execute action
-            if action_type == 0:  # Revenue
-                current_player.action_revenue()
-                last_actions.append(f"{current_player.name} collected 1 coin with revenue")
-            else:  # coup
-                if target_id >= 0 and target_id < len(board.players):
-                    target_player = board.players[target_id]
-                    if target_player.is_alive:
-                        current_player.action_coup(target_player)
-                        last_actions.append(f"{current_player.name} launched a Coup on {target_player.name}")
-            
-            # If we need to reveal a card, do it
-            if card_to_reveal >= 0 and card_to_reveal < len(current_player.hand):
-                if not current_player.hand[card_to_reveal].is_revealed:
-                    current_player.hand[card_to_reveal].is_revealed = True
-            
-            # Get new state and reward
-            next_state = current_agent.get_state(board)
-            # reward = current_agent.get_reward(board, board.game_has_ended)
-            
-            # Train agent
-            # current_agent.train_short_memory(state, (action_type, target_id, card_to_reveal), reward, next_state, board.game_has_ended)
-            # current_agent.remember(state, (action_type, target_id, card_to_reveal), reward, next_state, board.game_has_ended)
-            
-            # Update game state
-            board.next_move(last_actions)
-            
-            # Keep last_actions list from growing too large
-            if len(last_actions) > 3:
-                last_actions.pop(0)
+            last_actions = board.agents_next_move(last_actions) 
     
     # Draw game state
     if not is_active:
         display_start_menu(screen)
     else:
-        # Draw board background
-        pygame.draw.rect(screen, COLORS['board'], board_zone_rect)
-        
-        # Add a subtle pattern to the board
-        pattern_size = 20
-        for x in range(0, WINDOW_WIDTH, pattern_size):
-            for y in range(BOARD_TOP, WINDOW_HEIGHT, pattern_size):
-                if (x + y) % (pattern_size * 2) == 0:
-                    pattern_rect = pygame.Rect(x, y, pattern_size, pattern_size)
-                    pygame.draw.rect(screen, 
-                                   tuple(max(0, c - 5) for c in COLORS['board']), 
-                                   pattern_rect)
+        display_board_background(screen)
         
         # Draw game elements
         display_board(board)
@@ -406,52 +409,7 @@ while running:
         
         # Draw game over state if applicable
         if board.game_has_ended:
-            overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 128))  # Semi-transparent black
-            screen.blit(overlay, (0, 0))
-            
-            # Get the winner (the only player with unrevealed cards)
-            winner = next(p for p in board.players if p.is_alive)
-            
-            # Draw winner announcement
-            text = f"{winner.name} Wins!"
-            for i in range(3):  # Create a glowing effect
-                text_surface = title_font.render(text, True, 
-                                               tuple(min(255, c + i*20) for c in COLORS['next_player']))
-                text_rect = text_surface.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - i*2))
-                screen.blit(text_surface, text_rect)
-            
-            # Draw restart button
-            restart_button = pygame.Rect(WINDOW_WIDTH//2 - BUTTON_WIDTH//2,
-                                       WINDOW_HEIGHT//2 + 50,
-                                       BUTTON_WIDTH,
-                                       BUTTON_HEIGHT)
-            mouse_pos = pygame.mouse.get_pos()
-            is_hover = restart_button.collidepoint(mouse_pos)
-            draw_button(screen, restart_button, "New Game", False, is_hover)
-            
-            if is_hover and pygame.mouse.get_pressed()[0]:
-                # Clear the screen before restarting
-                screen.fill(COLORS['background'])
-                pygame.display.update()
-                # Reset game state
-                last_actions = []
-                board.start()
-                
-                # Update training metrics
-                n_games += 1
-                for agent_id, agent in enumerate(agents):
-                    agent.n_games = n_games
-                    # Train on past experiences
-                    # agent.train_long_memory()
-                    # Save model if this agent won
-                    # if board.players[agent_id].is_alive:
-                    #     agent.model.save(f'{models_path}/model_player_{agent_id}.pth')
-                    #     # Update plotting metrics
-                    #     score = agent.get_reward(board, True)
-                    #     if score > record:
-                    #         record = score
-                    #     total_score += score
+            display_game_over(screen)
     
     pygame.display.update()
     clock.tick(60)  # limits FPS to 60

@@ -25,11 +25,11 @@ class Player(BaseModel):
         else:
             self.must_coup = False
     
-    def update_assassination_status(self):
+    def update_coup_status(self):
         self.update_can_coup()
         self.update_must_coup()
 
-    def lose_one_life(self):
+    def lose_one_influence(self):
         # If first card is revealed, reveal second card
         if self.hand[0].is_revealed:
             self.hand[1].is_revealed = True
@@ -56,33 +56,33 @@ class Player(BaseModel):
 
     def gain_coins(self, amount: int):
         self.coins += amount
-        self.update_assassination_status()
+        self.update_coup_status()
 
     def lose_coins(self, amount: int):
         self.coins -= amount
-        self.update_assassination_status()
+        self.update_coup_status()
 
     def action_revenue(self):
         self.gain_coins(1)
-        self.update_assassination_status()
+        self.update_coup_status()
 
     def action_foreign_aid(self):
         self.gain_coins(2)
-        self.update_assassination_status()
+        self.update_coup_status()
     
     def action_coup(self, target_player):
         if self.coins >= 7:
             self.lose_coins(7)
-            self.update_assassination_status()
-            target_player.lose_one_life()
-        self.update_assassination_status()
+            self.update_coup_status()
+            target_player.lose_one_influence()
+        self.update_coup_status()
 
     ## character actions
 
     # basic actions
     def action_duke(self):
         self.gain_coins(3)
-        self.update_assassination_status()
+        self.update_coup_status()
         print(f"Player {self.name} gained 3 coins with duke and has now {self.coins} coins")
     
     def action_assassin(self):
