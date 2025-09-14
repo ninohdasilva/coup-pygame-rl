@@ -13,7 +13,7 @@ class CoupAgent:
         self.state = None
 
     def get_desired_action(self, board: Board) -> Action:
-        player = board.players[self.player_id]
+        player = board.get_player_by_id(self.player_id)
 
         # Random choice from available actions TODO implement RL logic later
         possible_targets = [p.id for p in board.alive_players 
@@ -29,3 +29,11 @@ class CoupAgent:
         desired_action = random.choice(available_actions)
             
         return desired_action
+
+    def get_desired_challenge(self, player_to_challenge_id: int, board: Board) -> Action:
+        player = board.get_player_by_id(self.player_id)
+        
+        available_actions = [Action(action_type=ActionType.CHALLENGE, origin_player_id=player.id, target_player_id=player_to_challenge_id, card_to_reveal=-1), Action(action_type=ActionType.DO_NOTHING, origin_player_id=player.id, target_player_id=player_to_challenge_id, card_to_reveal=-1)]
+        
+        desired_challenge = random.choice(available_actions)
+        return desired_challenge

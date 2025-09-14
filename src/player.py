@@ -2,6 +2,8 @@ import random
 from pydantic import BaseModel
 from card import Card
 from typing import List
+from action import Action, ActionType
+from character import Character
 
 class Player(BaseModel):
     id: int
@@ -12,6 +14,17 @@ class Player(BaseModel):
     can_coup: bool
     must_coup: bool
     is_alive: bool
+
+    def is_bluffing(self, action: Action):
+        match action.action_type:
+            case ActionType.DUKE:
+                for card in self.hand:
+                    if card.character == Character.DUKE and not card.is_revealed:
+                        return False
+                return True, card
+            # TODO remaining cases
+            case _:
+                return False, None
 
     def update_can_coup(self):
         if self.coins >= 7:
@@ -61,6 +74,9 @@ class Player(BaseModel):
     def lose_coins(self, amount: int):
         self.coins -= amount
         self.update_coup_status()
+
+    def lose_card(self, card: Card):
+        self.hand.pop(self.hand.index(card))
 
     def action_revenue(self):
         self.gain_coins(1)

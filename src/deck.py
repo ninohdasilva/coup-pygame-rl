@@ -23,3 +23,7 @@ class Deck():
 
     def draw(self):
         return self.deck.pop()
+
+    def add_card(self, card: Card):
+        self.deck.append(card)
+        self.shuffle()

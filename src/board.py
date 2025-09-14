@@ -1,6 +1,8 @@
+from calendar import c
 import random
 import numpy as np
 from action import Action, ActionType
+from card import Card
 from character import Character
 from player import Player
 from deck import Deck
@@ -23,6 +25,16 @@ class Board:
         self.next_player = None
         self.game_has_started = False
         self.game_has_ended = True
+    
+    def get_player_by_id(self, id: int):
+        return self.players[id]
+
+    def player_return_card_to_deck(self, card: Card, player: Player):
+        self.deck.add_card(card)
+        player.lose_card(card)
+    
+    def player_draw_single_card(self, player: Player):
+        player.hand.append(self.deck.draw())
 
     def start(self):
         self.game_has_started = True
@@ -165,7 +177,7 @@ class Board:
         return last_actions
 
     def execute_action(self, player: Player, action: Action, last_actions: list[str]):
-        if not action.can_be_countered:
+        if not action.can_be_challenged and not action.can_be_countered:
             # Revenue
             if action.action_type == ActionType.REVENUE:
                 player.action_revenue()
@@ -175,12 +187,41 @@ class Board:
                 target_player = self.players[action.target_player_id]
                 player.action_coup(target_player)
                 last_actions.append(f"{player.name} launched a Coup on {target_player.name}")
-        # else:
-        # TODO
-        # if action.can_be_challenged:
-        #     TODO (recursive method ?)
+        else:
+            if action.can_be_challenged:
+                challenges = [agent.get_desired_challenge(player.id, self) for agent in self.agents if agent.player_id != player.id]
+                challenges = [action for action in challenges if action.action_type == ActionType.CHALLENGE]
+                if challenges:
+                    selected_challenge = random.choice(challenges)
+                    is_bluffing, card = player.is_bluffing(action)
+                    if is_bluffing:
+                        player.lose_one_influence()
+                        last_actions.append(f"{player.name} was bluffing and lost an influence")
+                    else:
+                        selected_challenged_player = self.get_player_by_id(selected_challenge.origin_player_id)
+                        selected_challenged_player.lose_one_influence()
+                        last_actions.append(f"{selected_challenged_player.name} lost his challenge and lost an influence")
+                        
+                        if action.action_type == ActionType.DUKE: # TODO remaining cases
+                                self.player_return_card_to_deck(card, player)
+                                self.player_draw_single_card(player)
+                                player.action_duke()
+                                last_actions.append(f"{player.name} gained 3 coins with duke")
+        #                     
+        #             
+        #     
+        #             
         # if action.can_be_countered:
         #     if action.action_type == ActionType.FOREIGN_AID:
+        #         counters = [get_desired_action(self) for agent in self.agents if agent.player_id != player.id]
+        #         counters = [action for action in counters if action.action_type == ActionType.COUNTER_FOREIGN_AID_WITH_DUKE]
+        #         if counters:
+        #             TODO (recursive method ?)
+        #     else:
+        #         player.action_foreign_aid()
+        #         last_actions.append(f"{player.name} collected 2 coins with foreign aid")
+        # if action.can_be_countered:
+        #     if action.action_type == ActionType.DUKE:
         #         counters = [get_desired_action(self) for agent in self.agents if agent.player_id != player.id]
         #         counters = [action for action in counters if action.action_type == ActionType.COUNTER_FOREIGN_AID_WITH_DUKE]
         #         if counters:
