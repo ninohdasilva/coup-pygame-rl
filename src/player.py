@@ -18,7 +18,7 @@ class Player(BaseModel):
 
     def is_bluffing(self, action: Action):
         match action.action_type:
-            case ActionType.DUKE:
+            case ActionType.DUKE | ActionType.COUNTER_FOREIGN_AID_WITH_DUKE:
                 for card in self.hand:
                     if card.character == Character.DUKE and not card.is_revealed:
                         return False, card

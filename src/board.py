@@ -58,7 +58,7 @@ class Board:
             )
             self.players.append(player)
         self.alive_players = self.players.copy()
-        self.agents = [CoupAgent(i) for i in range(self.nb_players)]
+        self.agents = [CoupAgent(player) for player in self.players]
         self.next_player = random.choice(self.alive_players)
 
     def player_try_action(self, player: Player, last_actions: list[str]):
@@ -105,7 +105,7 @@ class Board:
         """Convert the game state into a numerical representation"""
         for agent in self.agents:
             state = []
-            player = self.players[agent.player_id]
+            player = agent.player
 
             # Encode own cards (2 cards x 5 characters + 2 revealed flags)
             for card in player.hand:
@@ -203,7 +203,9 @@ class Board:
 
         return last_actions
 
-    def execute_action(self, player: Player, action: Action, last_actions: list[str]):
+    def execute_action(
+        self, agent: CoupAgent, player: Player, action: Action, last_actions: list[str]
+    ):
         if not action.can_be_challenged and not action.can_be_countered:
             # Revenue
             if action.action_type == ActionType.REVENUE:
@@ -221,9 +223,10 @@ class Board:
                 last_actions.append(
                     f"Player {player.name} tries to use {action.action_type}"
                 )
+                # Get eventual challenges
                 challenges = [
                     agent.get_desired_challenge(
-                        player, self.get_player_by_id(agent.player_id)
+                        player, self.get_player_by_id(agent.player_id), last_actions
                     )
                     for agent in self.agents
                     if agent.player_id != player.id
@@ -234,25 +237,29 @@ class Board:
                     if action.action_type == ActionType.CHALLENGE
                 ]
                 if challenges:
+                    # Select a challenge
                     selected_challenge = random.choice(challenges)
                     challenging_player = self.get_player_by_id(
                         selected_challenge.origin_player_id
                     )
                     last_actions.append(
-                        f"{challenging_player.name} is challenging {player.name}"
+                        f"{challenging_player.name} is challenging {player.name} with {action.action_type}"
                     )
                     is_bluffing, card = player.is_bluffing(action)
+                    # Challenge successful
                     if is_bluffing:
                         player.lose_one_influence()
                         last_actions.append(
                             f"{player.name} was bluffing and lost an influence"
                         )
+                    # Challenge failed
                     else:
                         challenging_player.lose_one_influence()
                         last_actions.append(
                             f"{challenging_player.name} lost his challenge and lost an influence"
                         )
 
+                        # Player draws new card and action is executed
                         if (
                             action.action_type == ActionType.DUKE
                         ):  # TODO remaining cases
@@ -262,29 +269,80 @@ class Board:
                             last_actions.append(
                                 f"{player.name} gained 3 coins with duke"
                             )
-        #
-        #
-        #
-        #
-        # if action.can_be_countered:
-        #     if action.action_type == ActionType.FOREIGN_AID:
-        #         counters = [get_desired_action(self) for agent in self.agents if agent.player_id != player.id]
-        #         counters = [action for action in counters if action.action_type == ActionType.COUNTER_FOREIGN_AID_WITH_DUKE]
-        #         if counters:
-        #             TODO (recursive method ?)
-        #     else:
-        #         player.action_foreign_aid()
-        #         last_actions.append(f"{player.name} collected 2 coins with foreign aid")
-        # if action.can_be_countered:
-        #     if action.action_type == ActionType.DUKE:
-        #         counters = [get_desired_action(self) for agent in self.agents if agent.player_id != player.id]
-        #         counters = [action for action in counters if action.action_type == ActionType.COUNTER_FOREIGN_AID_WITH_DUKE]
-        #         if counters:
-        #             TODO (recursive method ?)
 
-        #         else:
-        #             player.action_foreign_aid()
-        #             last_actions.append(f"{player.name} collected 2 coins with foreign aid")
+            if action.can_be_countered:
+                # Get eventual counters
+                last_actions.append(
+                    f"Player {player.name} tries to use {action.action_type}"
+                )
+                counters = [
+                    agent.get_desired_counter(
+                        action_to_counter=action,
+                        player_to_counter=agent.player,
+                    )
+                    for agent in self.agents
+                    if agent.player.id != player.id
+                ]
+                counters = [
+                    action
+                    for action in counters
+                    if action.action_type != ActionType.DO_NOTHING
+                ]
+                if counters:
+                    # Select a counter
+                    selected_counter = random.choice(counters)
+                    countering_player = self.get_player_by_id(
+                        selected_counter.origin_player_id
+                    )
+                    last_actions.append(
+                        f"{countering_player.name} tries to counter {player.name} with {action.action_type}"
+                    )
+                    challenge = agent.get_desired_challenge(
+                        action_to_challenge=action,
+                        player_to_challenge=countering_player,
+                    )
+                    # Player challenges countering player
+                    if challenge.action_type == ActionType.CHALLENGE:
+                        last_actions.append(
+                            f"{player.name} is challenging {countering_player.name} with {challenge.action_type}"
+                        )
+                        is_bluffing, card = countering_player.is_bluffing(challenge)
+                        # Challenge successful
+                        if is_bluffing:
+                            countering_player.lose_one_influence()
+                            last_actions.append(
+                                f"{countering_player.name} was bluffing for his counter and lost an influence"
+                            )
+                            # Player original action is executed
+                            if action.action_type == ActionType.FOREIGN_AID:
+                                player.action_foreign_aid()
+                                last_actions.append(
+                                    f"{player.name} successfully collected 2 coins with foreign aid"
+                                )
+                        # Challenge failed
+                        else:
+                            # Player loses an influence
+                            player.lose_one_influence()
+                            last_actions.append(
+                                f"{player.name} lost his challenge and lost an influence"
+                            )
+                            # Countering player draws new card
+                            card = agent.choose_card_to_reveal(
+                                countering_player.hand
+                            )  # card was previously None because countering player is bluffing
+                            self.return_card_from_player_to_deck(
+                                card, countering_player
+                            )
+                            self.draw_single_card_from_deck_to_player(countering_player)
+                            last_actions.append(
+                                f"{countering_player.name} successfully countered {action.action_type} from {player.name}"
+                            )
+
+                else:
+                    player.action_foreign_aid()
+                    last_actions.append(
+                        f"{player.name} successfully collected 2 coins with foreign aid"
+                    )
         return last_actions
 
     def agents_next_move(self, last_actions: list[str], last_actions_max_length: int):
@@ -308,7 +366,12 @@ class Board:
         )
 
         # Execute action and update states
-        last_actions = self.execute_action(current_player, desired_action, last_actions)
+        last_actions = self.execute_action(
+            agent=current_agent,
+            player=current_player,
+            action=desired_action,
+            last_actions=last_actions,
+        )
         while len(last_actions) > last_actions_max_length:
             last_actions.pop(0)
         self.update_states(last_actions)
