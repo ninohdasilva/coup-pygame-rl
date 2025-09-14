@@ -40,16 +40,15 @@ class CoupAgent:
             target_player_id=-1,
             card_to_reveal=-1,
             can_be_countered=False,
-            can_be_challenged=False,
+            can_be_challenged=True,
         )
         if player.must_coup:
             available_actions = coup_actions
         elif player.can_coup and possible_targets:
-            available_actions = coup_actions + [revenue_action] + [duke_action]
+            available_actions = coup_actions + [revenue_action, duke_action]
         else:
-            available_actions = [duke_action]
+            available_actions = [revenue_action, duke_action]
         desired_action = random.choice(available_actions)
-        print(desired_action)
         return desired_action
 
     def get_desired_challenge(
@@ -60,6 +59,8 @@ class CoupAgent:
                 action_type=ActionType.CHALLENGE,
                 origin_player_id=player.id,
                 target_player_id=player_to_challenge.id,
+                can_be_countered=False,
+                can_be_challenged=False,
                 card_to_reveal=-1,
             ),
             Action(
@@ -67,6 +68,8 @@ class CoupAgent:
                 origin_player_id=player.id,
                 target_player_id=player_to_challenge.id,
                 card_to_reveal=-1,
+                can_be_countered=False,
+                can_be_challenged=False,
             ),
         ]
         desired_challenge = random.choice(available_actions)

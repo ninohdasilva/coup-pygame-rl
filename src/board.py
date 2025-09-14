@@ -218,8 +218,13 @@ class Board:
                 )
         else:
             if action.can_be_challenged:
+                last_actions.append(
+                    f"Player {player.name} tries to use {action.action_type}"
+                )
                 challenges = [
-                    agent.get_desired_challenge(player.id, player)
+                    agent.get_desired_challenge(
+                        player, self.get_player_by_id(agent.player_id)
+                    )
                     for agent in self.agents
                     if agent.player_id != player.id
                 ]
@@ -230,6 +235,12 @@ class Board:
                 ]
                 if challenges:
                     selected_challenge = random.choice(challenges)
+                    challenging_player = self.get_player_by_id(
+                        selected_challenge.origin_player_id
+                    )
+                    last_actions.append(
+                        f"{challenging_player.name} is challenging {player.name}"
+                    )
                     is_bluffing, card = player.is_bluffing(action)
                     if is_bluffing:
                         player.lose_one_influence()
@@ -237,12 +248,9 @@ class Board:
                             f"{player.name} was bluffing and lost an influence"
                         )
                     else:
-                        selected_challenged_player = self.get_player_by_id(
-                            selected_challenge.origin_player_id
-                        )
-                        selected_challenged_player.lose_one_influence()
+                        challenging_player.lose_one_influence()
                         last_actions.append(
-                            f"{selected_challenged_player.name} lost his challenge and lost an influence"
+                            f"{challenging_player.name} lost his challenge and lost an influence"
                         )
 
                         if (

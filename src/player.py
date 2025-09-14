@@ -21,8 +21,8 @@ class Player(BaseModel):
             case ActionType.DUKE:
                 for card in self.hand:
                     if card.character == Character.DUKE and not card.is_revealed:
-                        return False
-                return True, card
+                        return False, card
+                return True, None
             # TODO remaining cases
             case _:
                 return False, None
@@ -100,9 +100,6 @@ class Player(BaseModel):
     def action_duke(self):
         self.gain_coins(3)
         self.update_coup_status()
-        print(
-            f"Player {self.name} gained 3 coins with duke and has now {self.coins} coins"
-        )
 
     def action_assassin(self):
         pass

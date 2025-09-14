@@ -12,7 +12,7 @@ pygame.init()
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 800
 BOARD_TOP = 200
-LAST_ACTIONS_MAX_LENGTH = 3
+LAST_ACTIONS_MAX_LENGTH = 5
 
 # Colors
 COLORS = {
@@ -76,7 +76,7 @@ def display_training_stats(screen: pygame.Surface):
 title_font = pygame.font.Font(None, 48)
 font = pygame.font.Font(None, 36)
 small_font = pygame.font.Font(None, 24)
-last_actions_font = pygame.font.Font(None, 16)
+last_actions_font = pygame.font.Font(None, 14)
 
 # Button dimensions
 BUTTON_WIDTH = 160
@@ -258,9 +258,9 @@ def display_info(screen: pygame.Surface, info_rect: pygame.Rect):
     for i, action in enumerate(last_actions):
         action_rect = pygame.Rect(
             info_rect.left + 15,
-            title_rect.bottom + 15 + i * 35,
+            title_rect.bottom + 15 + i * 20,  # Reduced spacing between items
             info_rect.width - 30,
-            30,
+            15,  # Reduced height from 30 to 15
         )
         if i % 2 == 0:
             pygame.draw.rect(screen, COLORS["board"], action_rect, border_radius=5)
