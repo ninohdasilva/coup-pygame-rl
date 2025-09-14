@@ -280,6 +280,16 @@ class Board:
         return last_actions
 
     def agents_next_move(self, last_actions: list[str], last_actions_max_length: int):
+        # Update alive players list and check game end
+        self.alive_players = [
+            player
+            for player in self.players
+            if any(not card.is_revealed for card in player.hand)
+        ]
+
+        if self.check_if_game_has_ended():
+            return []
+
         # Get current player and their agent
         current_player = self.next_player
         current_agent = self.agents[current_player.id]
@@ -294,5 +304,13 @@ class Board:
         while len(last_actions) > last_actions_max_length:
             last_actions.pop(0)
         self.update_states(last_actions)
+
+        # Find next alive player
+        current_position = self.players.index(self.next_player)
+        for i in range(1, len(self.players)):
+            next_position = (current_position + i) % len(self.players)
+            if any(not card.is_revealed for card in self.players[next_position].hand):
+                self.next_player = self.players[next_position]
+                break
 
         return last_actions

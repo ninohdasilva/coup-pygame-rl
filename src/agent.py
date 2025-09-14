@@ -15,51 +15,41 @@ class CoupAgent:
             for p in alive_players
             if p.id != player.id and any(not card.is_revealed for card in p.hand)
         ]
+        coup_actions = [
+            Action(
+                action_type=ActionType.COUP,
+                origin_player_id=player.id,
+                target_player_id=target_player_id,
+                card_to_reveal=-1,
+                can_be_countered=False,
+                can_be_challenged=False,
+            )
+            for target_player_id in possible_targets
+        ]
+        revenue_action = Action(
+            action_type=ActionType.REVENUE,
+            origin_player_id=player.id,
+            target_player_id=-1,
+            card_to_reveal=-1,
+            can_be_countered=False,
+            can_be_challenged=False,
+        )
+        duke_action = Action(
+            action_type=ActionType.DUKE,
+            origin_player_id=player.id,
+            target_player_id=-1,
+            card_to_reveal=-1,
+            can_be_countered=False,
+            can_be_challenged=False,
+        )
         if player.must_coup:
-            available_actions = [
-                Action(
-                    action_type=ActionType.COUP,
-                    origin_player_id=player.id,
-                    target_player_id=target_player_id,
-                    card_to_reveal=-1,
-                    can_be_countered=False,
-                    can_be_challenged=False,
-                )
-                for target_player_id in possible_targets
-            ]
+            available_actions = coup_actions
         elif player.can_coup and possible_targets:
-            available_actions = [
-                Action(
-                    action_type=ActionType.COUP,
-                    origin_player_id=player.id,
-                    target_player_id=target_player_id,
-                    card_to_reveal=-1,
-                    can_be_countered=False,
-                    can_be_challenged=False,
-                )
-                for target_player_id in possible_targets
-            ] + [
-                Action(
-                    action_type=ActionType.REVENUE,
-                    origin_player_id=player.id,
-                    target_player_id=-1,
-                    card_to_reveal=-1,
-                    can_be_countered=False,
-                    can_be_challenged=False,
-                )
-            ]
+            available_actions = coup_actions + [revenue_action] + [duke_action]
         else:
-            available_actions = [
-                Action(
-                    action_type=ActionType.REVENUE,
-                    origin_player_id=player.id,
-                    target_player_id=-1,
-                    card_to_reveal=-1,
-                    can_be_countered=False,
-                    can_be_challenged=False,
-                )
-            ]
+            available_actions = [duke_action]
         desired_action = random.choice(available_actions)
+        print(desired_action)
         return desired_action
 
     def get_desired_challenge(
