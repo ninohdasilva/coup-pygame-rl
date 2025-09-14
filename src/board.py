@@ -337,6 +337,11 @@ class Board:
                             last_actions.append(
                                 f"{countering_player.name} successfully countered {action.action_type} from {player.name}"
                             )
+                    # Player does not challenge countering player
+                    else:
+                        last_actions.append(
+                            f"{countering_player.name} successfully countered {action.action_type} from {player.name}"
+                        )
 
                 else:
                     player.action_foreign_aid()
