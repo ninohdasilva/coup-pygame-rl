@@ -1,12 +1,14 @@
 from enum import Enum
 from pydantic import BaseModel
 
+
 class ActionStatus(Enum):
     SUCCESS = 0
     FAILURE = 1
     CHALLENGED = 2
     CHALLENGED_SUCCESS = 3
     CHALLENGED_FAILURE = 4
+
 
 class ActionType(Enum):
     LOSE_ONE_INFLUENCE = -1
@@ -24,6 +26,7 @@ class ActionType(Enum):
     COUNTER_CAPTAIN_WITH_AMBASSADOR = 10
     CHALLENGE = 11
 
+
 class Action(BaseModel):
     action_type: ActionType
     origin_player_id: int
@@ -31,5 +34,3 @@ class Action(BaseModel):
     card_to_reveal: int
     can_be_countered: bool
     can_be_challenged: bool
-    is_mandatory: bool
-    status: ActionStatus

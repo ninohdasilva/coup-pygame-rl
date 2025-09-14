@@ -5,6 +5,7 @@ from typing import List
 from action import Action, ActionType
 from character import Character
 
+
 class Player(BaseModel):
     id: int
     name: str
@@ -31,13 +32,13 @@ class Player(BaseModel):
             self.can_coup = True
         else:
             self.can_coup = False
-    
+
     def update_must_coup(self):
         if self.coins >= 10:
             self.must_coup = True
         else:
             self.must_coup = False
-    
+
     def update_coup_status(self):
         self.update_can_coup()
         self.update_must_coup()
@@ -59,12 +60,12 @@ class Player(BaseModel):
             else:
                 self.hand[1].is_revealed = True
                 revealed_card = self.hand[1]
-        
+
         # Check if both cards are revealed to determine if player is dead
         if self.hand[0].is_revealed and self.hand[1].is_revealed:
             self.is_alive = False
             self.coins = 0
-            
+
         return revealed_card
 
     def gain_coins(self, amount: int):
@@ -85,7 +86,7 @@ class Player(BaseModel):
     def action_foreign_aid(self):
         self.gain_coins(2)
         self.update_coup_status()
-    
+
     def action_coup(self, target_player):
         if self.coins >= 7:
             self.lose_coins(7)
@@ -99,8 +100,10 @@ class Player(BaseModel):
     def action_duke(self):
         self.gain_coins(3)
         self.update_coup_status()
-        print(f"Player {self.name} gained 3 coins with duke and has now {self.coins} coins")
-    
+        print(
+            f"Player {self.name} gained 3 coins with duke and has now {self.coins} coins"
+        )
+
     def action_assassin(self):
         pass
 
@@ -119,7 +122,7 @@ class Player(BaseModel):
 
     def action_assassin_counter(self):
         pass
-    
+
     def action_ambassador_counter(self):
         pass
 
@@ -128,5 +131,3 @@ class Player(BaseModel):
 
     def action_contessa_counter(self):
         pass
-
-    

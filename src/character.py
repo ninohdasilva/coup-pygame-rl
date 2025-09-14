@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class Character(Enum):
     DUKE = "DUKE"
     ASSASSIN = "ASSASSIN"
