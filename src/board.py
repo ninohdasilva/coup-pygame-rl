@@ -29,11 +29,11 @@ class Board:
     def get_player_by_id(self, id: int):
         return self.players[id]
 
-    def player_return_card_to_deck(self, card: Card, player: Player):
+    def return_card_from_player_to_deck(self, card: Card, player: Player):
         self.deck.add_card(card)
         player.lose_card(card)
     
-    def player_draw_single_card(self, player: Player):
+    def draw_single_card_from_deck_to_player(self, player: Player):
         player.hand.append(self.deck.draw())
 
     def start(self):
@@ -203,8 +203,8 @@ class Board:
                         last_actions.append(f"{selected_challenged_player.name} lost his challenge and lost an influence")
                         
                         if action.action_type == ActionType.DUKE: # TODO remaining cases
-                                self.player_return_card_to_deck(card, player)
-                                self.player_draw_single_card(player)
+                                self.return_card_from_player_to_deck(card, player)
+                                self.draw_single_card_from_deck_to_player(player)
                                 player.action_duke()
                                 last_actions.append(f"{player.name} gained 3 coins with duke")
         #                     
