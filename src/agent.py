@@ -1,234 +1,196 @@
-# import torch
 import random
-import numpy as np
-from collections import deque
-from character import Character
-from board import Board
+from action import Action, ActionType
+from card import Card
+from player import Player
 
-MAX_MEMORY = 100_000
-BATCH_SIZE = 1000
-LR = 0.001
 
 class CoupAgent:
-    def __init__(self, player_id: int):
-        self.player_id = player_id
-        self.n_games = 0
-        self.epsilon = 0  # randomness
-        self.gamma = 0.9  # discount rate
-        self.memory = deque(maxlen=MAX_MEMORY)
-        
-        # State size: 
-        # - Own cards (2 cards x 5 possible characters + 2 revealed flags) = 12
-        # - Other players (3 players x (2 cards x 5 characters + 2 revealed flags + coins)) = 3 * 13 = 39
-        # - Own coins = 1
-        # Total state size = 52
-        # state_size = 52
-        
-        # Action size:
-        # - Basic actions (revenue=0, coup=1) = 2
-        # - Assassination targets (3 other players) = 3
-        # - Card to reveal when losing life (2 cards) = 2
-        # Total action size = 7
-        # action_size = 7
-        
-        # hidden_size = 256
-        # self.model = Linear_QNet(state_size, hidden_size, action_size)
-        # self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
+    def __init__(self, player: Player):
+        self.id = player.id
+        self.player = player
+        self.state = None
 
-    def get_state(self, board: Board) -> np.ndarray:
-        """Convert the game state into a numerical representation"""
-        state = []
-        player = board.players[self.player_id]
-        
-        # Encode own cards (2 cards x 5 characters + 2 revealed flags)
-        for card in player.hand:
-            # One-hot encoding for character type
-            for char in Character:
-                state.append(1 if card.character == char else 0)
-        # Add revealed status for both cards
-        state.append(1 if player.hand[0].is_revealed else 0)
-        state.append(1 if player.hand[1].is_revealed else 0)
-            
-        # Encode own coins
-        state.append(player.coins)
-        
-        # Encode other players' information
-        for other_player in board.players:
-            if other_player != player:
-                # Encode their cards (only if revealed)
-                for card in other_player.hand:
-                    for char in Character:
-                        # Only see character if card is revealed
-                        state.append(1 if (card.is_revealed and card.character == char) else 0)
-                # Add revealed status for both cards
-                state.append(1 if other_player.hand[0].is_revealed else 0)
-                state.append(1 if other_player.hand[1].is_revealed else 0)
-                # Encode their coins
-                state.append(other_player.coins)
-        
-        return np.array(state, dtype=int)
-
-    # def get_reward(self, board: Board, done: bool) -> float:
-    #     """Calculate reward for the current state"""
-    #     player = board.players[self.player_id]
-        
-    #     if not player.is_alive:
-    #         return -10.0  # Large negative reward for dying
-        
-    #     if done and player.is_alive:
-    #         return 20.0  # Large positive reward for winning
-            
-    #     # Small positive reward for staying alive and having more coins
-    #     reward = 0.1 + (player.coins * 0.1)
-        
-    #     # Small negative reward for having revealed cards
-    #     for card in player.hand:
-    #         if card.is_revealed:
-    #             reward -= 0.2
-                
-    #     return reward
-
-    # def remember(self, state, action, reward, next_state, done):
-    #     self.memory.append((state, action, reward, next_state, done))
-
-    # def train_long_memory(self):
-    #     if len(self.memory) == 0:
-    #         return
-            
-    #     if len(self.memory) > BATCH_SIZE:
-    #         mini_sample = random.sample(self.memory, BATCH_SIZE)
-    #     else:
-    #         mini_sample = self.memory
-
-    #     # Convert the sampled experiences into numpy arrays
-    #     states = np.array([np.array(state) for state, _, _, _, _ in mini_sample])
-    #     actions = np.array([action for _, action, _, _, _ in mini_sample])
-    #     rewards = np.array([reward for _, _, reward, _, _ in mini_sample])
-    #     next_states = np.array([np.array(next_state) for _, _, _, next_state, _ in mini_sample])
-    #     dones = np.array([done for _, _, _, _, done in mini_sample])
-        
-    #     self.trainer.train_step(states, actions, rewards, next_states, dones)
-
-    # def train_short_memory(self, state, action, reward, next_state, done):
-    #     self.trainer.train_step(state, action, reward, next_state, done)
-
-    def get_action(self, state, board: Board) -> tuple[int, int, int]:
-        """
-        Returns a tuple of (action_type, target_player_id, card_to_reveal)
-        action_type: 0 for revenue, 1 for coup
-        target_player_id: -1 for revenue, 0-3 for assassination target
-        card_to_reveal: -1 for no reveal, 0-1 for card index to reveal
-        """
-        player = board.players[self.player_id]
-        
-        # Random moves: tradeoff exploration / exploitation
-        # self.epsilon = 80 - self.n_games
-        # if random.randint(0, 200) < self.epsilon:
-
-        # Random action
-        # Check if assassination is possible
-        possible_targets = [p.id for p in board.alive_players 
-                            if p.id != player.id and any(not card.is_revealed for card in p.hand)]
-        
-        if player.can_coup and possible_targets:
-            action_type = random.choice([0, 1])  # Can either take revenue or coup
+    def choose_card_to_reveal(self, hand: list[Card]) -> Card:
+        if any(not card.is_revealed for card in hand):
+            chosen_card = random.choice([c for c in hand if not c.is_revealed])
+            chosen_card.is_revealed = True
+            return chosen_card
         else:
-            action_type = 0  # Can only take revenue
-            
-        # If assassinating, choose random target
-        target_player_id = -1
-        if action_type == 1 and possible_targets:
-            target_player_id = random.choice(possible_targets)
-            
-        # If we need to reveal a card, choose randomly
-        card_to_reveal = -1
-        if player.nb_remaining_cards > 1:  # If we have multiple cards to choose from
-            unrevealed_cards = [i for i, card in enumerate(player.hand) if not card.is_revealed]
-            if unrevealed_cards:
-                card_to_reveal = random.choice(unrevealed_cards)
-                
-        return action_type, target_player_id, card_to_reveal
-        
-        # else:
-        #     # Get action from model
-        #     state0 = torch.from_numpy(state).float()
-        #     prediction = self.model(state0.unsqueeze(0))
-            
-        #     # Convert model output to action
-        #     action_idx = torch.argmax(prediction).item()
-            
-        #     # Decode action index into components
-        #     # First 2 indices are action types
-        #     action_type = 0 if action_idx < 2 else 1
-            
-        #     # Next 3 indices are target players
-        #     target_player_id = (action_idx - 2) % 3 if action_type == 1 else -1
-            
-        #     # Last 2 indices are card reveals
-        #     card_to_reveal = (action_idx - 5) if action_idx >= 5 else -1
-            
-        #     return action_type, target_player_id, card_to_reveal
+            return ValueError("No card to reveal")
 
-# class Linear_QNet(torch.nn.Module):
-#     def __init__(self, input_size, hidden_size, output_size):
-#         super().__init__()
-#         self.linear1 = torch.nn.Linear(input_size, hidden_size)
-#         self.linear2 = torch.nn.Linear(hidden_size, output_size)
+    def choose_cards_to_keep_after_ambassador(
+        self, hand: list[Card], new_cards: list[Card]
+    ) -> list[Card]:
+        original_hand_length = len(hand)
+        self.player.hand = random.choices(hand + new_cards, k=original_hand_length)
+        unused_cards = [c for c in hand + new_cards if c not in self.player.hand]
+        return self.player.hand, unused_cards
 
-#     def forward(self, x):
-#         x = torch.nn.functional.relu(self.linear1(x))
-#         x = self.linear2(x)
-#         return x
+    def choose_action(self, player: Player, alive_players: list[Player]) -> Action:
+        # Random choice from available actions TODO implement RL logic later
+        possible_coup_and_assassin_targets = [
+            p.id
+            for p in alive_players
+            if p.id != self.player.id and any(not card.is_revealed for card in p.hand)
+        ]
+        possible_captain_targets = [
+            p.id
+            for p in alive_players
+            if p.id != self.player.id
+            and any(not card.is_revealed for card in p.hand)
+            and p.coins >= 2
+        ]
+        coup_actions = [
+            Action(
+                action_type=ActionType.COUP,
+                origin_player_id=self.player.id,
+                target_player_id=target_player_id,
+                card_to_reveal=-1,
+                can_be_countered=False,
+                can_be_challenged=False,
+            )
+            for target_player_id in possible_coup_and_assassin_targets
+        ]
+        captain_actions = [
+            Action(
+                action_type=ActionType.CAPTAIN,
+                origin_player_id=self.player.id,
+                target_player_id=-target_player_id,
+                card_to_reveal=-1,
+                can_be_countered=True,
+                can_be_challenged=True,
+            )
+            for target_player_id in possible_captain_targets
+        ]
+        assassin_actions = [
+            Action(
+                action_type=ActionType.ASSASSIN,
+                origin_player_id=self.player.id,
+                target_player_id=target_player_id,
+                card_to_reveal=-1,
+                can_be_countered=True,
+                can_be_challenged=True,
+            )
+            for target_player_id in possible_coup_and_assassin_targets
+        ]
+        revenue_action = Action(
+            action_type=ActionType.REVENUE,
+            origin_player_id=player.id,
+            target_player_id=-1,
+            card_to_reveal=-1,
+            can_be_countered=False,
+            can_be_challenged=False,
+        )
+        foreign_aid_action = Action(
+            action_type=ActionType.FOREIGN_AID,
+            origin_player_id=player.id,
+            target_player_id=-1,
+            card_to_reveal=-1,
+            can_be_countered=True,
+            can_be_challenged=False,
+        )
+        available_actions = []
+        if player.must_coup:
+            available_actions += coup_actions
+        else:
+            available_actions += [revenue_action, foreign_aid_action]
+            if player.can_coup and possible_coup_and_assassin_targets:
+                available_actions = coup_actions + [
+                    revenue_action,
+                    foreign_aid_action,
+                ]
+                if self.player.coins > 3:
+                    available_actions += assassin_actions
+            if possible_captain_targets:
+                available_actions += captain_actions
+        desired_action = random.choice(
+            available_actions
+        )  # TODO implement RL logic later
+        return desired_action
 
-#     def save(self, file_name='model.pth'):
-#         torch.save(self.state_dict(), file_name)
+    def choose_challenge(
+        self,
+        action_to_challenge: Action,  # will be used later with RL logic
+        player_to_challenge: Player,
+    ) -> Action:
+        available_actions = [
+            Action(
+                action_type=ActionType.CHALLENGE,
+                origin_player_id=self.player.id,
+                target_player_id=player_to_challenge.id,
+                can_be_countered=False,
+                can_be_challenged=False,
+                card_to_reveal=-1,
+            ),
+            Action(
+                action_type=ActionType.DO_NOTHING,
+                origin_player_id=self.player.id,
+                target_player_id=player_to_challenge.id,
+                card_to_reveal=-1,
+                can_be_countered=False,
+                can_be_challenged=False,
+            ),
+        ]
+        desired_challenge = random.choice(available_actions)
+        return desired_challenge
 
-# class QTrainer:
-#     def __init__(self, model, lr, gamma):
-#         self.model = model
-#         self.lr = lr
-#         self.gamma = gamma
-#         self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
-#         self.criterion = torch.nn.MSELoss()
-
-#     def train_step(self, state, action, reward, next_state, done):
-#         # Convert to numpy arrays first
-#         if isinstance(state, list):
-#             state = np.array(state)
-#         if isinstance(next_state, list):
-#             next_state = np.array(next_state)
-#         if isinstance(action, list):
-#             action = np.array(action)
-#         if isinstance(reward, list):
-#             reward = np.array(reward)
-
-#         # Convert to tensors
-#         state = torch.from_numpy(state).float()
-#         next_state = torch.from_numpy(next_state).float()
-#         action = torch.from_numpy(np.array(action)).long()
-#         reward = torch.tensor(reward).float()
-
-#         if len(state.shape) == 1:
-#             # (1, x)
-#             state = torch.unsqueeze(state, 0)
-#             next_state = torch.unsqueeze(next_state, 0)
-#             action = torch.unsqueeze(action, 0)
-#             reward = torch.unsqueeze(reward, 0)
-#             done = (done, )
-
-#         # 1: predicted Q values with current state
-#         pred = self.model(state)
-
-#         target = pred.clone()
-#         for idx in range(len(done)):
-#             Q_new = reward[idx]
-#             if not done[idx]:
-#                 Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
-
-#             target[idx][torch.argmax(action[idx]).item()] = Q_new
-    
-#         # 2: Q_new = r + y * max(next_predicted Q value)
-#         self.optimizer.zero_grad()
-#         loss = self.criterion(target, pred)
-#         loss.backward()
-#         self.optimizer.step()
+    def choose_counter(
+        self,
+        action_to_counter: Action,  # will be used later with RL logic
+        player_to_counter: Player,
+    ) -> Action:
+        available_actions = [
+            Action(
+                action_type=ActionType.DO_NOTHING,
+                origin_player_id=self.player.id,
+                target_player_id=player_to_counter.id,
+                card_to_reveal=-1,
+                can_be_countered=False,
+                can_be_challenged=False,
+            ),
+        ]
+        if action_to_counter.action_type == ActionType.FOREIGN_AID:
+            available_actions.append(
+                Action(
+                    action_type=ActionType.COUNTER_FOREIGN_AID_WITH_DUKE,
+                    origin_player_id=self.player.id,
+                    target_player_id=player_to_counter.id,
+                    card_to_reveal=-1,
+                    can_be_countered=False,
+                    can_be_challenged=True,
+                )
+            )
+        elif action_to_counter.action_type == ActionType.CAPTAIN:
+            available_actions.append(
+                Action(
+                    action_type=ActionType.COUNTER_CAPTAIN_WITH_CAPTAIN,
+                    origin_player_id=self.player.id,
+                    target_player_id=player_to_counter.id,
+                    card_to_reveal=-1,
+                    can_be_countered=False,
+                    can_be_challenged=True,
+                )
+            )
+            available_actions.append(
+                Action(
+                    action_type=ActionType.COUNTER_CAPTAIN_WITH_AMBASSADOR,
+                    origin_player_id=self.player.id,
+                    target_player_id=player_to_counter.id,
+                    card_to_reveal=-1,
+                    can_be_countered=False,
+                    can_be_challenged=True,
+                )
+            )
+        elif action_to_counter.action_type == ActionType.ASSASSIN:
+            available_actions.append(
+                Action(
+                    action_type=ActionType.COUNTER_ASSASSIN_WITH_CONTESSA,
+                    origin_player_id=self.player.id,
+                    target_player_id=player_to_counter.id,
+                    card_to_reveal=-1,
+                    can_be_countered=False,
+                    can_be_challenged=True,
+                )
+            )
+        desired_counter = random.choice(available_actions)
+        return desired_counter
