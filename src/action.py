@@ -2,24 +2,15 @@ from enum import Enum
 from pydantic import BaseModel
 
 
-class ActionStatus(Enum):
-    SUCCESS = 0
-    FAILURE = 1
-    CHALLENGED = 2
-    CHALLENGED_SUCCESS = 3
-    CHALLENGED_FAILURE = 4
-
-
 class ActionType(Enum):
-    LOSE_ONE_INFLUENCE = -1
     DO_NOTHING = 0
-    CHALLENGE = 1
-    REVENUE = 2
-    FOREIGN_AID = 3
-    COUP = 4
-    DUKE = 5
+    REVENUE = 1
+    FOREIGN_AID = 2
+    DUKE = 3
+    CHALLENGE = 4
+    AMBASSADOR = 5
     ASSASSIN = 6
-    AMBASSADOR = 7
+    COUP = 7
     CAPTAIN = 8
     CONTESSA = 9
     COUNTER_FOREIGN_AID_WITH_DUKE = 10

@@ -8,6 +8,7 @@ from character import Character
 
 class Player(BaseModel):
     id: int
+    agent_id: int = None
     name: str
     hand: List[Card]
     coins: int
@@ -23,9 +24,37 @@ class Player(BaseModel):
                     if card.character == Character.DUKE and not card.is_revealed:
                         return False, card
                 return True, None
-            # TODO remaining cases
-            case _:
+            case ActionType.ASSASSIN:
+                for card in self.hand:
+                    if card.character == Character.ASSASSIN and not card.is_revealed:
+                        return False, card
+                return True, None
+            case ActionType.AMBASSADOR | ActionType.COUNTER_CAPTAIN_WITH_AMBASSADOR:
+                for card in self.hand:
+                    if card.character == Character.AMBASSADOR and not card.is_revealed:
+                        return False, card
+                return True, None
+            case ActionType.CAPTAIN | ActionType.COUNTER_CAPTAIN_WITH_CAPTAIN:
+                for card in self.hand:
+                    if card.character == Character.CAPTAIN and not card.is_revealed:
+                        return False, card
+                return True, None
+            case ActionType.COUNTER_ASSASSIN_WITH_CONTESSA:
+                for card in self.hand:
+                    if card.character == Character.CONTESSA and not card.is_revealed:
+                        return False, card
+                return True, None
+            case (
+                ActionType.CHALLENGE
+                | ActionType.REVENUE
+                | ActionType.FOREIGN_AID
+                | ActionType.COUP
+                | ActionType.DO_NOTHING
+            ):
+                print(f"Action {action.action_type} is not a bluff")
                 return False, None
+            case _:
+                return ValueError(f"Unknown action type: {action.action_type}")
 
     def update_can_coup(self):
         if self.coins >= 7:
@@ -42,31 +71,6 @@ class Player(BaseModel):
     def update_coup_status(self):
         self.update_can_coup()
         self.update_must_coup()
-
-    def lose_one_influence(self):
-        # If first card is revealed, reveal second card
-        if self.hand[0].is_revealed:
-            self.hand[1].is_revealed = True
-            revealed_card = self.hand[1]
-        # If second card is revealed, reveal first card
-        elif self.hand[1].is_revealed:
-            self.hand[0].is_revealed = True
-            revealed_card = self.hand[0]
-        # If no card is revealed, randomly reveal one
-        else:
-            if random.random() < 0.5:
-                self.hand[0].is_revealed = True
-                revealed_card = self.hand[0]
-            else:
-                self.hand[1].is_revealed = True
-                revealed_card = self.hand[1]
-
-        # Check if both cards are revealed to determine if player is dead
-        if self.hand[0].is_revealed and self.hand[1].is_revealed:
-            self.is_alive = False
-            self.coins = 0
-
-        return revealed_card
 
     def gain_coins(self, amount: int):
         self.coins += amount
@@ -88,43 +92,26 @@ class Player(BaseModel):
         self.update_coup_status()
 
     def action_coup(self, target_player):
+        # Lost influence is handled by target player's agent
         if self.coins >= 7:
             self.lose_coins(7)
             self.update_coup_status()
-            target_player.lose_one_influence()
         self.update_coup_status()
 
-    ## character actions
+    ## character actions (only handles impact on self)
 
     # basic actions
     def action_duke(self):
         self.gain_coins(3)
         self.update_coup_status()
 
-    def action_assassin(self):
+    def action_assassin(self, target_player):
+        # Eventual lost influence is handled by target player's agent
+        self.lose_coins(3)
+        self.update_coup_status()
         pass
 
-    def action_ambassador(self):
-        pass
-
-    def action_captain(self):
-        pass
-
-    def action_contessa(self):
-        pass
-
-    # counters
-    def action_duke_counter(self):
-        pass
-
-    def action_assassin_counter(self):
-        pass
-
-    def action_ambassador_counter(self):
-        pass
-
-    def action_captain_counter(self):
-        pass
-
-    def action_contessa_counter(self):
-        pass
+    def action_captain(self, target_player):
+        target_player.lose_coins(2)
+        self.gain_coins(2)
+        self.update_coup_status()

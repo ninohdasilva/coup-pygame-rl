@@ -24,8 +24,11 @@ class Deck:
     def shuffle(self):
         random.shuffle(self.deck)
 
-    def draw(self):
-        return self.deck.pop()
+    def draw(self, n: int = 1):
+        if n == 1:
+            return self.deck.pop()
+        else:
+            return [self.deck.pop() for _ in range(n)]
 
     def add_card(self, card: Card):
         self.deck.append(card)
