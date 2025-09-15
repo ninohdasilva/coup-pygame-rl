@@ -22,7 +22,7 @@ COLORS = {
     "accent": (97, 175, 239),  # Bright blue
     "button": (86, 95, 108),  # Medium gray
     "button_hover": (98, 109, 124),
-    "next_player": (152, 195, 121),  # Green
+    "current_player": (152, 195, 121),  # Green
     "dead_player": (224, 108, 117),  # Red
     "border": (86, 95, 108),  # Medium gray
 }
@@ -181,7 +181,7 @@ def display_game_over(screen: pygame.Surface):
     text = f"{winner.name} Wins!"
     for i in range(3):  # Create a glowing effect
         text_surface = title_font.render(
-            text, True, tuple(min(255, c + i * 20) for c in COLORS["next_player"])
+            text, True, tuple(min(255, c + i * 20) for c in COLORS["current_player"])
         )
         text_rect = text_surface.get_rect(
             center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - i * 2)
@@ -324,20 +324,20 @@ def display_card(
 
 
 def display_player_info(
-    screen: pygame.Surface, player: Player, x: int, y: int, is_next_player: bool
+    screen: pygame.Surface, player: Player, x: int, y: int, is_current_player: bool
 ):
     # Draw player info background
     info_rect = pygame.Rect(x - 60, y - 30, 120, 60)
     pygame.draw.rect(screen, COLORS["background"], info_rect, border_radius=8)
 
     # Draw border with appropriate color
-    border_color = COLORS["next_player"] if is_next_player else COLORS["border"]
+    border_color = COLORS["current_player"] if is_current_player else COLORS["border"]
     if not player.is_alive:
         border_color = COLORS["dead_player"]
     pygame.draw.rect(screen, border_color, info_rect, width=2, border_radius=8)
 
     # Display player name and coins
-    name_color = COLORS["next_player"] if is_next_player else COLORS["text"]
+    name_color = COLORS["current_player"] if is_current_player else COLORS["text"]
     if not player.is_alive:
         name_color = COLORS["dead_player"]
 
@@ -366,7 +366,7 @@ def display_player_zone(
     player_zone_width: int = 200,
     player_zone_height: int = 100,
     player_index: int = 0,
-    is_next_player: bool = False,
+    is_current_player: bool = False,
 ):
     # Draw player zone background with a subtle gradient
     player_zone = pygame.Rect(x, y, player_zone_width, player_zone_height)
@@ -406,7 +406,9 @@ def display_player_zone(
             )
 
         info_y = player_zone.bottom + 30 if player_index == 0 else player_zone.top - 30
-        display_player_info(screen, player, player_zone.centerx, info_y, is_next_player)
+        display_player_info(
+            screen, player, player_zone.centerx, info_y, is_current_player
+        )
     else:  # Left or right player
         card_spacing = (player_zone_height - 2 * card_height) / 3
         card_x = player_zone.x + (player_zone_width - card_width) / 2
@@ -423,7 +425,9 @@ def display_player_zone(
             )
 
         info_x = player_zone.right + 60 if player_index == 3 else player_zone.left - 60
-        display_player_info(screen, player, info_x, player_zone.centery, is_next_player)
+        display_player_info(
+            screen, player, info_x, player_zone.centery, is_current_player
+        )
 
 
 def display_deck(screen: pygame.Surface, deck: Deck, x: int, y: int):
@@ -479,7 +483,7 @@ def display_board(board: Board):
             player_zone_width,
             player_zone_height,
             player_index=i,
-            is_next_player=board.next_player == player,
+            is_current_player=board.current_player == player,
         )
 
 

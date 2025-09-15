@@ -1,4 +1,4 @@
-import random
+import time
 from pydantic import BaseModel
 from card import Card
 from typing import List
@@ -77,21 +77,24 @@ class Player(BaseModel):
         self.update_coup_status()
 
     def lose_coins(self, amount: int):
+        print(time.time())
+        print(f"Player {self.name} Initial coins: {self.coins}")
         self.coins -= amount
+        print(f"Player {self.name} Coins after losing {amount}: {self.coins}")
         self.update_coup_status()
 
     def lose_card(self, card: Card):
         self.hand.pop(self.hand.index(card))
 
-    def action_revenue(self):
+    def get_revenue(self):
         self.gain_coins(1)
         self.update_coup_status()
 
-    def action_foreign_aid(self):
+    def get_foreign_aid(self):
         self.gain_coins(2)
         self.update_coup_status()
 
-    def action_coup(self, target_player):
+    def pay_coup(self, target_player):
         # Lost influence is handled by target player's agent
         if self.coins >= 7:
             self.lose_coins(7)
@@ -100,18 +103,8 @@ class Player(BaseModel):
 
     ## character actions (only handles impact on self)
 
-    # basic actions
-    def action_duke(self):
-        self.gain_coins(3)
-        self.update_coup_status()
-
-    def action_assassin(self, target_player):
+    def pay_assassin(self):
         # Eventual lost influence is handled by target player's agent
         self.lose_coins(3)
         self.update_coup_status()
         pass
-
-    def action_captain(self, target_player):
-        target_player.lose_coins(2)
-        self.gain_coins(2)
-        self.update_coup_status()

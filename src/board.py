@@ -14,7 +14,7 @@ class Board:
     players: list[Player]
     agents: list[CoupAgent]
     alive_players: list[Player]
-    next_player: Player
+    current_player: Player
     deck: Deck
     game_has_started: bool
     game_has_ended: bool
@@ -23,7 +23,7 @@ class Board:
         self.nb_players = nb_players
         self.players = []
         self.agents = []
-        self.next_player = None
+        self.current_player = None
         self.game_has_started = False
         self.game_has_ended = True
 
@@ -61,7 +61,7 @@ class Board:
         self.agents = [CoupAgent(player) for player in self.players]
         for agent in self.agents:
             agent.player.agent_id = agent.id
-        self.next_player = random.choice(self.alive_players)
+        self.current_player = random.choice(self.alive_players)
 
     def update_states(self, last_actions: list[Action]):
         """Convert the game state into a numerical representation"""
@@ -107,17 +107,30 @@ class Board:
 
     def check_if_game_has_ended(self):
         # Find next alive player before updating alive status else IndexError
-        current_position = self.alive_players.index(self.next_player)
-        next_position = (current_position + 1) % len(self.alive_players)
-        self.next_player = self.alive_players[next_position]
-
+        print(
+            f"Alive players before update: {[('player.is_alive', player.is_alive, player.name, player.coins, [('is_revealed', card.is_revealed) for card in player.hand]) for player in self.alive_players]}"
+        )
+        print(f"Current player: {self.current_player.name}")
         # Update alive status for each player
         for player in self.players:
             player.is_alive = any(not card.is_revealed for card in player.hand)
+            if not player.is_alive:
+                player.coins = 0
 
         # Update alive players list
         self.alive_players = [player for player in self.players if player.is_alive]
-        print(f"Alive players: {[player.name for player in self.alive_players]}")
+        print(
+            f"Alive players after update: {[('player.is_alive', player.is_alive, player.name, player.coins, [('is_revealed', card.is_revealed) for card in player.hand]) for player in self.alive_players]}"
+        )
+
+        found_next_player = False
+        while not found_next_player:
+            current_position = self.players.index(self.current_player)
+            next_position = (current_position + 1) % len(self.players)
+            self.current_player = self.players[next_position]
+            if self.current_player.is_alive:
+                found_next_player = True
+        print(f"Next player: {self.current_player.name}")
 
         # Game ends when only one player has unrevealed cards
         if len(self.alive_players) == 1:
@@ -133,22 +146,25 @@ class Board:
         if not action.can_be_challenged and not action.can_be_countered:
             # Revenue
             if action.action_type == ActionType.REVENUE:
-                player.action_revenue()
+                player.get_revenue()
                 last_actions.append(f"{player.name} collected 1 coin with revenue")
             # Coup
             elif action.action_type == ActionType.COUP:
                 target_player = self.get_player_by_id(action.target_player_id)
                 target_player_agent = self.agents[target_player.agent_id]
                 target_player_agent.choose_card_to_reveal(target_player.hand)
-                player.action_coup(target_player)
+                player.pay_coup(target_player)
                 last_actions.append(
                     f"{player.name} launched a Coup on {target_player.name}"
                 )
         else:
             if action.can_be_challenged:
-                last_actions.append(
-                    f"Player {player.name} tries to use {action.action_type}"
-                )
+                last_action = f"{player.name} tries to use {action.action_type}"
+                if action.target_player_id != -1:
+                    last_action += (
+                        f" on {self.get_player_by_id(action.target_player_id).name}"
+                    )
+                last_actions.append(last_action)
                 # Get eventual challenges
                 challenges = [
                     agent.choose_challenge(
@@ -163,6 +179,7 @@ class Board:
                     if action.action_type == ActionType.CHALLENGE
                 ]
                 if challenges:
+                    action.can_be_countered = False  # Action that is challenged cannot be countered afterwards
                     # Select a challenge
                     selected_challenge = random.choice(challenges)
                     challenging_player = self.get_player_by_id(
@@ -176,7 +193,7 @@ class Board:
                     # Challenge successful
                     if is_bluffing:
                         agent.choose_card_to_reveal(player.hand)
-                        # Player still pays for failedassassin action
+                        # Player still pays for failed assassin action
                         if action.action_type == ActionType.ASSASSIN:
                             player.lose_coins(3)
                         last_actions.append(
@@ -190,15 +207,13 @@ class Board:
                         last_actions.append(
                             f"{challenging_player.name} lost his challenge and lost an influence"
                         )
-
                         # Player draws new card
                         self.return_card_from_player_to_deck(action_card, player)
                         self.draw_single_card_from_deck_to_player(player)
                         # Action is executed
-                        if (
-                            action.action_type == ActionType.DUKE
-                        ):  # TODO remaining cases
-                            player.action_duke()
+                        if action.action_type == ActionType.DUKE:
+                            player.gain_coins(3)
+                            player.update_coup_status()
                             last_actions.append(
                                 f"{player.name} gained 3 coins with duke"
                             )
@@ -206,7 +221,9 @@ class Board:
                             target_player = self.get_player_by_id(
                                 action.target_player_id
                             )
-                            player.action_captain(target_player)
+                            target_player.lose_coins(2)
+                            player.gain_coins(2)
+                            player.update_coup_status()
                             last_actions.append(
                                 f"{player.name} successfully stole 2 coins from {target_player.name} with action {action.action_type}"
                             )
@@ -218,7 +235,7 @@ class Board:
                             target_player_agent.choose_card_to_reveal(
                                 target_player.hand
                             )
-                            player.action_assassin(target_player)
+                            player.pay_assassin()
                             last_actions.append(
                                 f"{player.name} successfully assassinated {target_player.name} with action {action.action_type}"
                             )
@@ -235,9 +252,7 @@ class Board:
 
             if action.can_be_countered:
                 # Get eventual counters
-                last_actions.append(
-                    f"Player {player.name} tries to use {action.action_type}"
-                )
+                last_actions.append(f"{player.name} tries to use {action.action_type}")
                 counters = [
                     agent.choose_counter(
                         action_to_counter=action,
@@ -284,7 +299,7 @@ class Board:
                             )
                             # Player original action is executed
                             if action.action_type == ActionType.FOREIGN_AID:
-                                player.action_foreign_aid()
+                                player.get_foreign_aid()
                                 last_actions.append(
                                     f"{player.name} successfully collected 2 coins with foreign aid"
                                 )
@@ -292,9 +307,11 @@ class Board:
                                 target_player = self.get_player_by_id(
                                     action.target_player_id
                                 )
-                                player.action_captain(target_player)
+                                target_player.lose_coins(2)
+                                player.gain_coins(2)
+                                player.update_coup_status()
                                 last_actions.append(
-                                    f"{player.name} successfully stole 2 coins from {target_player.name} with action {action.action_type}"
+                                    f"{player.name} successfully stole 2 coins from {target_player.name} with CAPTAIN"
                                 )
                         # Challenge failed
                         else:
@@ -320,23 +337,25 @@ class Board:
                 # Action is not countered
                 else:
                     if action.action_type == ActionType.FOREIGN_AID:
-                        player.action_foreign_aid()
+                        player.get_foreign_aid()
                         last_actions.append(
                             f"{player.name} successfully collected 2 coins with foreign aid"
                         )
                     elif action.action_type == ActionType.CAPTAIN:
                         target_player = self.get_player_by_id(action.target_player_id)
-                        player.action_captain(target_player)
+                        target_player.lose_coins(2)
+                        player.gain_coins(2)
+                        player.update_coup_status()
                         last_actions.append(
-                            f"{player.name} successfully stole 2 coins from {target_player.name} with action {action.action_type}"
+                            f"{player.name} successfully stole 2 coins from {target_player.name} with CAPTAIN"
                         )
                     elif action.action_type == ActionType.ASSASSIN:
                         target_player = self.get_player_by_id(action.target_player_id)
                         target_player_agent = self.agents[target_player.agent_id]
                         target_player_agent.choose_card_to_reveal(target_player.hand)
-                        player.action_assassin(target_player)
+                        player.pay_assassin()
                         last_actions.append(
-                            f"{player.name} successfully assassinated {target_player.name} with action {action.action_type}"
+                            f"{player.name} successfully assassinated {target_player.name} with ASSASSIN"
                         )
                     elif action.action_type == ActionType.AMBASSADOR:
                         drawn_cards = self.deck.draw(2)
@@ -346,7 +365,7 @@ class Board:
                         for card in unused_cards:
                             self.return_card_from_player_to_deck(card, player)
                         last_actions.append(
-                            f"{player.name} successfully exchanged 2 cards with action {action.action_type}"
+                            f"{player.name} successfully exchanged 2 cards with AMBASSADOR"
                         )
         return last_actions
 
@@ -355,7 +374,7 @@ class Board:
             return []
 
         # Get current player and their agent
-        current_player = self.next_player
+        current_player = self.current_player
         current_agent = self.agents[current_player.id]
 
         # Get state and desired action from agent
@@ -373,7 +392,7 @@ class Board:
         self.update_states(last_actions)
         print(f"Last actions: {last_actions}")
 
-        if self.check_if_game_has_ended():
-            return []
+        # if self.check_if_game_has_ended():
+        #     return []
 
         return last_actions
