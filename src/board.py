@@ -1,4 +1,3 @@
-from calendar import c
 import random
 import numpy as np
 from action import Action, ActionType
@@ -7,6 +6,21 @@ from character import Character
 from player import Player
 from deck import Deck
 from agent import CoupAgent
+from pydantic import BaseModel
+
+
+class ActionHistoryItem(BaseModel):
+    origin_player: Player
+    target_player: Player
+    action_type: ActionType
+
+
+class DeckHistoryItem(BaseModel):
+    card: Card
+    returned_from: bool
+    given_to: bool
+    player: Player
+    public: bool
 
 
 class Board:
@@ -18,6 +32,11 @@ class Board:
     deck: Deck
     game_has_started: bool
     game_has_ended: bool
+    state_item_length = 128
+    state_item_width = 16
+    agents_states: np.ndarray
+    actions_history: list[ActionHistoryItem]
+    deck_history: list[DeckHistoryItem]
 
     def __init__(self, nb_players: int = 4):
         self.nb_players = nb_players
@@ -30,12 +49,32 @@ class Board:
     def get_player_by_id(self, id: int):
         return self.players[id]
 
-    def return_card_from_player_to_deck(self, card: Card, player: Player):
+    def return_card_from_player_to_deck(self, card: Card, player: Player, public=False):
         self.deck.add_card(card)
         player.lose_card(card)
+        self.deck_history.append(
+            DeckHistoryItem(
+                card=card,
+                returned_from=True,
+                given_to=False,
+                player=player,
+                public=public,
+            )
+        )
+        self.deck_history = self.deck_history[-self.state_item_length :]
 
     def draw_single_card_from_deck_to_player(self, player: Player):
         player.hand.append(self.deck.draw())
+        self.deck_history.append(
+            DeckHistoryItem(
+                card=player.hand[-1],
+                returned_from=False,
+                given_to=True,
+                player=player,
+                public=False,
+            )
+        )
+        self.deck_history = self.deck_history[-self.state_item_length :]
 
     def start(self):
         self.game_has_started = True
@@ -62,55 +101,276 @@ class Board:
         for agent in self.agents:
             agent.player.agent_id = agent.id
         self.current_player = random.choice(self.alive_players)
+        self.actions_history = []
+        self.deck_history = []
 
-    def update_states(self, last_actions: list[Action]):
+    def extend_actions_history(self, action: Action):
+        self.actions_history.append(
+            ActionHistoryItem(
+                origin_player=self.get_player_by_id(action.origin_player_id),
+                target_player=self.get_player_by_id(action.target_player_id),
+                action_type=action.action_type,
+            )
+        )
+        self.actions_history = self.actions_history[-self.state_item_length :]
+
+    def extend_deck_history(
+        self,
+        card: Card,
+        returned_from: bool,
+        given_to: bool,
+        player: Player,
+        visibility: list[Player],
+    ):
+        self.deck_history.append(
+            DeckHistoryItem(
+                card=card,
+                returned_from=returned_from,
+                given_to=given_to,
+                player=player,
+                visibility=visibility,
+            )
+        )
+        self.deck_history = self.deck_history[-self.state_item_length :]
+
+    def update_agent_states(self):
         """Convert the game state into a numerical representation"""
-        for agent in self.agents:
-            state = []
-            player = agent.player
+        deck_size = np.array(
+            [0 if i != len(self.deck.deck) else 1 for i in range(self.state_item_width)]
+        )
+        nb_players = np.array(
+            [0 if i != len(self.players) else 1 for i in range(self.state_item_width)]
+        )
+        player_coins = np.array(
+            [
+                [0 if i != player.coins else 1 for i in range(self.state_item_width)]
+                for player in self.players
+            ]
+        )
+        players_alive_status = np.array(
+            [
+                [
+                    1 if i == player.id and player.is_alive else 0
+                    for i in range(self.state_item_width)
+                ]
+                for player in self.players
+            ]
+        )
 
-            # Encode own cards (2 cards x 5 characters + 2 revealed flags)
+        # Public player hands
+        # All players will see the same in their state
+        # Represents what would be visibile to an external observer
+        public_player_hands = []
+        for player in self.players:
             for card in player.hand:
-                # One-hot encoding for character type
-                for char in Character:
-                    state.append(1 if card.character == char else 0)
-            # Add revealed status for both cards
-            state.append(1 if player.hand[0].is_revealed else 0)
-            state.append(1 if player.hand[1].is_revealed else 0)
+                card_representation = []
+                if not card.is_revealed:
+                    card_representation = [
+                        1 if i == 0 else 0 for i in range(self.state_item_width)
+                    ]
+                else:
+                    card_representation = [
+                        0 if i != card.character.to_int() else 1
+                        for i in range(self.state_item_width)
+                    ]
+                public_player_hands.append(card_representation)
+        public_player_hands = np.array(public_player_hands)
+        # Private player hands, all cards are revealed for each hand
+        # We create a dict so that players will only see their own hand in their state
+        private_player_hands = {}
+        for player in self.players:
+            private_player_hands[player.id] = [
+                np.array(
+                    [
+                        0 if i != card.character.to_int() else 1
+                        for i in range(self.state_item_width)
+                    ]
+                )
+                for card in player.hand
+            ]
+        # Create actions history with proper shape (state_item_length x state_item_width)
+        actions_history = []
+        for action in self.actions_history:
+            # Create one-hot vectors for each component
+            origin_vector = [
+                0 if i != action.origin_player.id else 1
+                for i in range(self.state_item_width)
+            ]
+            action_type_vector = [
+                0 if i != action.action_type.value else 1
+                for i in range(self.state_item_width)
+            ]
+            target_vector = [
+                0 if i != action.target_player.id else 1
+                for i in range(self.state_item_width)
+            ]
 
-            # Encode own coins
-            state.append(player.coins)
+            # Combine the vectors while maintaining state_item_width dimension
+            action_representation = np.array(
+                origin_vector
+            )  # shape: (state_item_width,)
+            actions_history.append(action_representation)
 
-            # Encode other players' information
-            for other_player in self.players:
-                if other_player != player:
-                    # Encode their cards (only if revealed)
-                    for card in other_player.hand:
-                        for char in Character:
-                            # Only see character if card is revealed
-                            state.append(
-                                1
-                                if (card.is_revealed and card.character == char)
-                                else 0
+        # Convert to numpy array and ensure proper shape
+        actions_history = (
+            np.array(actions_history)
+            if actions_history
+            else np.zeros((0, self.state_item_width))
+        )
+        # Deck history with proper shape (n, state_item_width)
+        public_deck_history = []
+        for item in self.deck_history:
+            if item.public:
+                card_representation = [
+                    1 if i != item.card.character.to_int() else 0
+                    for i in range(self.state_item_width)
+                ]
+            else:
+                card_representation = [
+                    1 if i == 0 else 0 for i in range(self.state_item_width)
+                ]
+            public_deck_history.append(np.array(card_representation))
+
+        # Convert to numpy array with proper shape
+        public_deck_history = (
+            np.stack(public_deck_history)
+            if public_deck_history
+            else np.zeros((0, self.state_item_width))
+        )
+        # Like private player hands, each deck history item where the player has not seen the card has hidden card representation
+        private_deck_history = {}
+        for player in self.players:
+            private_deck_history[player.id] = []
+            for item in self.deck_history:
+                # Create card representation
+                if item.player.id == player.id:
+                    card_representation = [
+                        1 if i != item.card.character.to_int() else 0
+                        for i in range(self.state_item_width)
+                    ]
+                else:
+                    card_representation = [
+                        1 if i == 0 else 0 for i in range(self.state_item_width)
+                    ]
+
+                # Convert to numpy array and append
+                private_deck_history[player.id].append(np.array(card_representation))
+
+            # Convert list to numpy array with proper shape
+            if private_deck_history[player.id]:
+                # Stack arrays and verify shape
+                private_deck_history[player.id] = np.stack(
+                    private_deck_history[player.id]
+                )
+                assert (
+                    private_deck_history[player.id].shape[1] == self.state_item_width
+                ), (
+                    f"private_deck_history shape mismatch for player {player.id}: "
+                    f"{private_deck_history[player.id].shape}"
+                )
+            else:
+                # Initialize with empty array of proper shape
+                private_deck_history[player.id] = np.zeros((0, self.state_item_width))
+
+        # Common
+        # Ensure all arrays have shape (n, state_item_width)
+        deck_size = deck_size.reshape(1, self.state_item_width)
+        nb_players = nb_players.reshape(1, self.state_item_width)
+        player_coins = player_coins.reshape(-1, self.state_item_width)
+        players_alive_status = players_alive_status.reshape(-1, self.state_item_width)
+
+        board_info = np.vstack(
+            [
+                deck_size,
+                nb_players,
+                player_coins,
+                players_alive_status,
+            ]
+        )
+
+        padded_actions_history = np.concatenate(
+            [
+                actions_history,
+                np.zeros(
+                    (
+                        self.state_item_length - len(actions_history),
+                        self.state_item_width,
+                    )
+                ),
+            ]
+        )
+        for agent in self.agents:
+            player_hands = np.concatenate(
+                [
+                    public_player_hands,
+                    private_player_hands[agent.player.id],
+                ]
+            )
+            padded_public_deck_history = np.concatenate(
+                [
+                    public_deck_history,
+                    np.zeros(
+                        (
+                            self.state_item_length - len(public_deck_history),
+                            self.state_item_width,
+                        )
+                    ),
+                ]
+            )
+            # Handle private deck history padding
+            if len(private_deck_history[agent.player.id]) > 0:
+                # If we have history, pad it to state_item_length
+                padded_private_deck_history = np.concatenate(
+                    [
+                        private_deck_history[agent.player.id],
+                        np.zeros(
+                            (
+                                self.state_item_length
+                                - private_deck_history[agent.player.id].shape[0],
+                                self.state_item_width,
                             )
-                    # Add revealed status for both cards
-                    state.append(1 if other_player.hand[0].is_revealed else 0)
-                    state.append(1 if other_player.hand[1].is_revealed else 0)
-                    # Encode their coins
-                    state.append(other_player.coins)
+                        ),
+                    ]
+                )
+            else:
+                # If no history, create empty array with proper shape
+                padded_private_deck_history = np.zeros(
+                    (self.state_item_length, self.state_item_width)
+                )
+            # Verify shapes before concatenation
+            assert board_info.shape[1] == self.state_item_width, (
+                f"board_info shape mismatch: {board_info.shape}"
+            )
+            assert player_hands.shape[1] == self.state_item_width, (
+                f"player_hands shape mismatch: {player_hands.shape}"
+            )
+            assert padded_actions_history.shape[1] == self.state_item_width, (
+                f"padded_actions_history shape mismatch: {padded_actions_history.shape}"
+            )
+            assert padded_public_deck_history.shape[1] == self.state_item_width, (
+                f"padded_public_deck_history shape mismatch: {padded_public_deck_history.shape}"
+            )
+            assert padded_private_deck_history.shape[1] == self.state_item_width, (
+                f"padded_private_deck_history shape mismatch: {padded_private_deck_history.shape}"
+            )
 
-            # Encode last actions
-            for action in last_actions:
-                pass
-
-            agent.state = np.array(state, dtype=int)
+            # Concatenate along first axis (stacking vertically)
+            agent.state = np.vstack(
+                [
+                    board_info,
+                    player_hands,
+                    padded_actions_history,
+                    padded_public_deck_history,
+                    padded_private_deck_history,
+                ]
+            )
 
     def check_if_game_has_ended(self):
         # Find next alive player before updating alive status else IndexError
-        print(
-            f"Alive players before update: {[('player.is_alive', player.is_alive, player.name, player.coins, [('is_revealed', card.is_revealed) for card in player.hand]) for player in self.alive_players]}"
-        )
-        print(f"Current player: {self.current_player.name}")
+        # print(
+        #     f"Alive players before update: {[('player.is_alive', player.is_alive, player.name, player.coins, [('is_revealed', card.is_revealed) for card in player.hand]) for player in self.alive_players]}"
+        # )
+        # print(f"Current player: {self.current_player.name}")
         # Update alive status for each player
         for player in self.players:
             player.is_alive = any(not card.is_revealed for card in player.hand)
@@ -119,9 +379,9 @@ class Board:
 
         # Update alive players list
         self.alive_players = [player for player in self.players if player.is_alive]
-        print(
-            f"Alive players after update: {[('player.is_alive', player.is_alive, player.name, player.coins, [('is_revealed', card.is_revealed) for card in player.hand]) for player in self.alive_players]}"
-        )
+        # print(
+        #     f"Alive players after update: {[('player.is_alive', player.is_alive, player.name, player.coins, [('is_revealed', card.is_revealed) for card in player.hand]) for player in self.alive_players]}"
+        # )
 
         found_next_player = False
         while not found_next_player:
@@ -130,7 +390,7 @@ class Board:
             self.current_player = self.players[next_position]
             if self.current_player.is_alive:
                 found_next_player = True
-        print(f"Next player: {self.current_player.name}")
+        # print(f"Next player: {self.current_player.name}")
 
         # Game ends when only one player has unrevealed cards
         if len(self.alive_players) == 1:
@@ -148,6 +408,8 @@ class Board:
             if action.action_type == ActionType.REVENUE:
                 player.get_revenue()
                 last_actions.append(f"{player.name} collected 1 coin with revenue")
+                self.extend_actions_history(action)
+                self.update_agent_states()
             # Coup
             elif action.action_type == ActionType.COUP:
                 target_player = self.get_player_by_id(action.target_player_id)
@@ -157,6 +419,8 @@ class Board:
                 last_actions.append(
                     f"{player.name} launched a Coup on {target_player.name}"
                 )
+                self.extend_actions_history(action)
+                self.update_agent_states()
         else:
             if action.can_be_challenged:
                 last_action = f"{player.name} tries to use {action.action_type}"
@@ -165,6 +429,8 @@ class Board:
                         f" on {self.get_player_by_id(action.target_player_id).name}"
                     )
                 last_actions.append(last_action)
+                self.extend_actions_history(action)
+                self.update_agent_states()
                 # Get eventual challenges
                 challenges = [
                     agent.choose_challenge(
@@ -189,6 +455,8 @@ class Board:
                     last_actions.append(
                         f"{challenging_player.name} is challenging {action.action_type} by {player.name}"
                     )
+                    self.extend_actions_history(selected_challenge)
+                    self.update_agent_states()
                     is_bluffing, action_card = player.is_bluffing(action)
                     # Challenge successful
                     if is_bluffing:
@@ -199,6 +467,7 @@ class Board:
                         last_actions.append(
                             f"{player.name} was bluffing action {action.action_type} and lost an influence"
                         )
+                        self.update_agent_states()  # No action because it has failed due to the challenge
                     # Challenge failed
                     else:
                         challenging_player_agent.choose_card_to_reveal(
@@ -249,6 +518,10 @@ class Board:
                             last_actions.append(
                                 f"{player.name} successfully exchanged 2 cards with action {action.action_type}"
                             )
+                        self.extend_actions_history(
+                            action
+                        )  # maybe we will need to create a specific action instead of repeating
+                        self.update_agent_states()
 
             if action.can_be_countered:
                 # Get eventual counters
@@ -276,7 +549,9 @@ class Board:
                     last_actions.append(
                         f"{countering_player.name} tries to counter {player.name} with {selected_counter.action_type}"
                     )
-                    # All challenges can be countered
+                    self.extend_actions_history(selected_counter)
+                    self.update_agent_states()
+                    # All counters can be challenged
                     challenge = agent.choose_challenge(
                         action_to_challenge=action,
                         player_to_challenge=countering_player,
@@ -286,6 +561,8 @@ class Board:
                         last_actions.append(
                             f"{player.name} is challenging {countering_player.name} with {challenge.action_type}"
                         )
+                        self.extend_actions_history(challenge)
+                        self.update_agent_states()
                         is_bluffing, countering_card = countering_player.is_bluffing(
                             selected_counter
                         )
@@ -313,6 +590,8 @@ class Board:
                                 last_actions.append(
                                     f"{player.name} successfully stole 2 coins from {target_player.name} with CAPTAIN"
                                 )
+                            self.extend_actions_history(action)
+                            self.update_agent_states()
                         # Challenge failed
                         else:
                             # Player loses an influence
@@ -328,11 +607,13 @@ class Board:
                             last_actions.append(
                                 f"{countering_player.name} successfully countered {action.action_type} from {player.name}"
                             )
+                            self.update_agent_states()
                     # Player does not challenge countering player
                     else:
                         last_actions.append(
                             f"{countering_player.name} successfully countered {action.action_type} from {player.name}"
                         )
+                        self.update_agent_states()
 
                 # Action is not countered
                 else:
@@ -367,6 +648,7 @@ class Board:
                         last_actions.append(
                             f"{player.name} successfully exchanged 2 cards with AMBASSADOR"
                         )
+                        self.update_agent_states()
         return last_actions
 
     def agents_next_move(self, last_actions: list[str], last_actions_max_length: int):
@@ -389,8 +671,9 @@ class Board:
         )
         while len(last_actions) > last_actions_max_length:
             last_actions.pop(0)
-        self.update_states(last_actions)
-        print(f"Last actions: {last_actions}")
+        # print(f"Last actions: {last_actions}")
+        for agent in self.agents:
+            print(f"Agent {agent.player.name} state: {agent.state}")
 
         # if self.check_if_game_has_ended():
         #     return []
