@@ -266,10 +266,12 @@ class Board:
             ]
             public_deck_history.append(
                 np.concatenate(
-                    card_representation,
-                    returned_from_or_given_to_vector,
-                    player_vector,
-                    np.zeros(self.state_item_width // 4),
+                    [
+                        card_representation,
+                        returned_from_or_given_to_vector,
+                        player_vector,
+                        np.zeros(self.state_item_width // 4),
+                    ]
                 )
             )
 
@@ -304,20 +306,22 @@ class Board:
                 ]
 
                 # Convert to numpy array and append
-                private_deck_history[player.id].append(np.array(card_representation))
+                private_deck_history[player.id].append(
+                    np.concatenate(
+                        [
+                            card_representation,
+                            returned_from_or_given_to_vector,
+                            player_vector,
+                            np.zeros(self.state_item_width // 4),
+                        ]
+                    )
+                )
 
             # Convert list to numpy array with proper shape
             if private_deck_history[player.id]:
                 # Stack arrays and verify shape
                 private_deck_history[player.id] = np.array(
                     private_deck_history[player.id]
-                )
-                assert (
-                    private_deck_history[player.id].shape[1]
-                    == self.state_item_width // 4
-                ), (
-                    f"private_deck_history shape mismatch for player {player.id}: "
-                    f"{private_deck_history[player.id].shape}"
                 )
             else:
                 # Initialize with empty array of proper shape
@@ -368,7 +372,7 @@ class Board:
             # Handle private deck history padding
             if len(private_deck_history[agent.player.id]) > 0:
                 # If we have history, pad it to state_item_length
-                padded_private_deck_history = np.concatenate(
+                padded_private_deck_history = np.vstack(
                     [
                         private_deck_history[agent.player.id],
                         np.zeros(
