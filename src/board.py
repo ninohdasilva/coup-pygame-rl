@@ -33,7 +33,7 @@ class Board:
     game_has_started: bool
     game_has_ended: bool
     state_item_length = 128
-    state_item_width = 16
+    state_item_width = 64
     agents_states: np.ndarray
     actions_history: list[ActionHistoryItem]
     deck_history: list[DeckHistoryItem]
@@ -135,23 +135,32 @@ class Board:
 
     def update_agent_states(self):
         """Convert the game state into a numerical representation"""
-        deck_size = np.array(
-            [0 if i != len(self.deck.deck) else 1 for i in range(self.state_item_width)]
-        )
-        nb_players = np.array(
-            [0 if i != len(self.players) else 1 for i in range(self.state_item_width)]
-        )
-        player_coins = np.array(
+        deck_size_vector = np.array(
             [
-                [0 if i != player.coins else 1 for i in range(self.state_item_width)]
+                0 if i != len(self.deck.deck) else 1
+                for i in range(self.state_item_width // 4)
+            ]
+        )
+        nb_players_vector = np.array(
+            [
+                0 if i != len(self.players) else 1
+                for i in range(self.state_item_width // 4)
+            ]
+        )
+        player_coins_vectors = np.concatenate(
+            [
+                [
+                    0 if i != player.coins else 1
+                    for i in range(self.state_item_width // 4)
+                ]
                 for player in self.players
             ]
         )
-        players_alive_status = np.array(
+        players_alive_status_vectors = np.concatenate(
             [
                 [
                     1 if i == player.id and player.is_alive else 0
-                    for i in range(self.state_item_width)
+                    for i in range(self.state_item_width // 4)
                 ]
                 for player in self.players
             ]
@@ -162,52 +171,70 @@ class Board:
         # Represents what would be visibile to an external observer
         public_player_hands = []
         for player in self.players:
+            hand_representation = []
             for card in player.hand:
-                card_representation = []
                 if not card.is_revealed:
-                    card_representation = [
-                        1 if i == 0 else 0 for i in range(self.state_item_width)
+                    hand_representation += [
+                        1 if i == 0 else 0 for i in range(self.state_item_width // 4)
                     ]
                 else:
-                    card_representation = [
+                    hand_representation += [
                         0 if i != card.character.to_int() else 1
-                        for i in range(self.state_item_width)
+                        for i in range(self.state_item_width // 4)
                     ]
-                public_player_hands.append(card_representation)
-        public_player_hands = np.array(public_player_hands)
+            public_player_hands.append(
+                np.concatenate(
+                    [
+                        hand_representation,
+                        np.zeros(self.state_item_width // 2),
+                    ]
+                )
+            )
+        public_player_hands = np.stack(public_player_hands)
         # Private player hands, all cards are revealed for each hand
         # We create a dict so that players will only see their own hand in their state
         private_player_hands = {}
         for player in self.players:
-            private_player_hands[player.id] = [
-                np.array(
-                    [
-                        0 if i != card.character.to_int() else 1
-                        for i in range(self.state_item_width)
+            hand_representation = []
+            for card in player.hand:
+                if not card.is_revealed:
+                    hand_representation += [
+                        1 if i == 0 else 0 for i in range(self.state_item_width // 4)
                     ]
-                )
-                for card in player.hand
-            ]
+                else:
+                    hand_representation += [
+                        0 if i != card.character.to_int() else 1
+                        for i in range(self.state_item_width // 4)
+                    ]
+            private_player_hands[player.id] = np.concatenate(
+                [hand_representation, np.zeros(self.state_item_width // 2)],
+            )
+
         # Create actions history with proper shape (state_item_length x state_item_width)
         actions_history = []
         for action in self.actions_history:
             # Create one-hot vectors for each component
             origin_vector = [
                 0 if i != action.origin_player.id else 1
-                for i in range(self.state_item_width)
+                for i in range(self.state_item_width // 4)
             ]
             action_type_vector = [
                 0 if i != action.action_type.value else 1
-                for i in range(self.state_item_width)
+                for i in range(self.state_item_width // 4)
             ]
             target_vector = [
                 0 if i != action.target_player.id else 1
-                for i in range(self.state_item_width)
+                for i in range(self.state_item_width // 4)
             ]
 
             # Combine the vectors while maintaining state_item_width dimension
-            action_representation = np.array(
-                origin_vector
+            action_representation = np.concatenate(
+                [
+                    origin_vector,
+                    action_type_vector,
+                    target_vector,
+                    np.zeros(self.state_item_width // 4),
+                ]
             )  # shape: (state_item_width,)
             actions_history.append(action_representation)
 
@@ -223,17 +250,32 @@ class Board:
             if item.public:
                 card_representation = [
                     1 if i != item.card.character.to_int() else 0
-                    for i in range(self.state_item_width)
+                    for i in range(self.state_item_width // 4)
                 ]
             else:
                 card_representation = [
-                    1 if i == 0 else 0 for i in range(self.state_item_width)
+                    1 if i == 0 else 0 for i in range(self.state_item_width // 4)
                 ]
-            public_deck_history.append(np.array(card_representation))
+            returned_from_or_given_to_vector = [
+                0 if i != item.returned_from else 1
+                for i in range(self.state_item_width // 4)
+            ]
+            player_vector = [
+                0 if i != item.player.id else 1
+                for i in range(self.state_item_width // 4)
+            ]
+            public_deck_history.append(
+                np.concatenate(
+                    card_representation,
+                    returned_from_or_given_to_vector,
+                    player_vector,
+                    np.zeros(self.state_item_width // 4),
+                )
+            )
 
         # Convert to numpy array with proper shape
         public_deck_history = (
-            np.stack(public_deck_history)
+            np.array(public_deck_history)
             if public_deck_history
             else np.zeros((0, self.state_item_width))
         )
@@ -246,12 +288,20 @@ class Board:
                 if item.player.id == player.id:
                     card_representation = [
                         1 if i != item.card.character.to_int() else 0
-                        for i in range(self.state_item_width)
+                        for i in range(self.state_item_width // 4)
                     ]
                 else:
                     card_representation = [
-                        1 if i == 0 else 0 for i in range(self.state_item_width)
+                        1 if i == 0 else 0 for i in range(self.state_item_width // 4)
                     ]
+                returned_from_or_given_to_vector = [
+                    0 if i != item.returned_from else 1
+                    for i in range(self.state_item_width // 4)
+                ]
+                player_vector = [
+                    0 if i != item.player.id else 1
+                    for i in range(self.state_item_width // 4)
+                ]
 
                 # Convert to numpy array and append
                 private_deck_history[player.id].append(np.array(card_representation))
@@ -259,11 +309,12 @@ class Board:
             # Convert list to numpy array with proper shape
             if private_deck_history[player.id]:
                 # Stack arrays and verify shape
-                private_deck_history[player.id] = np.stack(
+                private_deck_history[player.id] = np.array(
                     private_deck_history[player.id]
                 )
                 assert (
-                    private_deck_history[player.id].shape[1] == self.state_item_width
+                    private_deck_history[player.id].shape[1]
+                    == self.state_item_width // 4
                 ), (
                     f"private_deck_history shape mismatch for player {player.id}: "
                     f"{private_deck_history[player.id].shape}"
@@ -272,25 +323,21 @@ class Board:
                 # Initialize with empty array of proper shape
                 private_deck_history[player.id] = np.zeros((0, self.state_item_width))
 
-        # Common
-        # Ensure all arrays have shape (n, state_item_width)
-        deck_size = deck_size.reshape(1, self.state_item_width)
-        nb_players = nb_players.reshape(1, self.state_item_width)
-        player_coins = player_coins.reshape(-1, self.state_item_width)
-        players_alive_status = players_alive_status.reshape(-1, self.state_item_width)
+        deck_size_plus_nb_players_vectors = np.concatenate(
+            [deck_size_vector, nb_players_vector, np.zeros(self.state_item_width // 2)]
+        )
 
-        board_info = np.vstack(
+        board_info = np.stack(
             [
-                deck_size,
-                nb_players,
-                player_coins,
-                players_alive_status,
+                deck_size_plus_nb_players_vectors,
+                player_coins_vectors,
+                players_alive_status_vectors,
             ]
         )
 
-        padded_actions_history = np.concatenate(
+        padded_actions_history = np.vstack(
             [
-                actions_history,
+                actions_history.squeeze(),
                 np.zeros(
                     (
                         self.state_item_length - len(actions_history),
@@ -300,13 +347,14 @@ class Board:
             ]
         )
         for agent in self.agents:
-            player_hands = np.concatenate(
+            player_hands = np.vstack(
                 [
                     public_player_hands,
                     private_player_hands[agent.player.id],
                 ]
             )
-            padded_public_deck_history = np.concatenate(
+
+            padded_public_deck_history = np.vstack(
                 [
                     public_deck_history,
                     np.zeros(
@@ -673,7 +721,8 @@ class Board:
             last_actions.pop(0)
         # print(f"Last actions: {last_actions}")
         for agent in self.agents:
-            print(f"Agent {agent.player.name} state: {agent.state}")
+            # print(f"Agent {agent.player.name} state: {agent.state}")
+            print(agent.state.shape)
 
         # if self.check_if_game_has_ended():
         #     return []

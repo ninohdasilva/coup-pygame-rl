@@ -1,4 +1,3 @@
-import time
 from pydantic import BaseModel
 from card import Card
 from typing import List
@@ -77,7 +76,6 @@ class Player(BaseModel):
         self.update_coup_status()
 
     def lose_coins(self, amount: int):
-        print(time.time())
         print(f"Player {self.name} Initial coins: {self.coins}")
         self.coins -= amount
         print(f"Player {self.name} Coins after losing {amount}: {self.coins}")
