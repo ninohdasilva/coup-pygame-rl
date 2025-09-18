@@ -33,6 +33,7 @@ class Board:
     game_has_started: bool
     game_has_ended: bool
     state_item_length = 128
+    full_state_length = 392
     state_item_width = 64
     agents_states: np.ndarray
     actions_history: list[ActionHistoryItem]
@@ -97,12 +98,16 @@ class Board:
             )
             self.players.append(player)
         self.alive_players = self.players.copy()
-        self.agents = [CoupAgent(player) for player in self.players]
+        self.agents = [
+            CoupAgent(player, self.full_state_length, self.state_item_width)
+            for player in self.players
+        ]
         for agent in self.agents:
             agent.player.agent_id = agent.id
         self.current_player = random.choice(self.alive_players)
         self.actions_history = []
         self.deck_history = []
+        self.update_agent_states()
 
     def extend_actions_history(self, action: Action):
         self.actions_history.append(

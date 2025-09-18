@@ -1,20 +1,65 @@
 import random
+import torch
 from action import Action, ActionType
 from card import Card
 from player import Player
+from dqn import DQN
 
 
 class CoupAgent:
-    def __init__(self, player: Player):
+    def __init__(
+        self,
+        player: Player,
+        full_state_length: int,
+        state_item_width: int,
+        epsilon: float = 0.1,
+    ):
         self.id = player.id
         self.player = player
         self.state = None
+        self.n_actions = len(ActionType)
+        self.epsilon = epsilon
+        self.device = "cpu"
+
+        self.policy_net = DQN(full_state_length, state_item_width, self.n_actions).to(
+            self.device
+        )
+        self.target_net = DQN(full_state_length, state_item_width, self.n_actions).to(
+            self.device
+        )
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()
+
+    def create_action_mask(self, available_actions: list[ActionType]) -> torch.tensor:
+        return torch.tensor(
+            [[0 for _ in range(self.n_actions) if _ not in available_actions]]
+        )
+
+    def select_action(
+        self, state: torch.tensor, action_mask: torch.tensor
+    ) -> ActionType:
+        if random.random() < self.epsilon:
+            # explore: choose random valid action
+            valid_actions = torch.nonzero(action_mask[0], as_tuple=True)[0]
+            action = valid_actions[torch.randint(len(valid_actions), (1,))].item()
+        else:
+            # exploit: mask Q-values
+            with torch.no_grad():
+                q_values = self.policy_net.select_action(
+                    state, action_mask, self.device
+                )  # [1, n_actions]
+                invalid_value = -1e9
+                masked_q_values = q_values + (action_mask == 0) * invalid_value
+                action = masked_q_values.argmax(dim=1).item()
+        return action
 
     def choose_card_to_reveal(self, hand: list[Card]) -> Card:
         if any(not card.is_revealed for card in hand):
-            chosen_card = random.choice([c for c in hand if not c.is_revealed])
-            chosen_card.is_revealed = True
-            return chosen_card
+            action_mask = self.create_action_mask(
+                [ActionType.REVEAL_CARD_1, ActionType.REVEAL_CARD_2]
+            )
+            action = self.select_action(self.state, action_mask)
+            return action
         else:
             return ValueError("No card to reveal")
 
@@ -103,10 +148,9 @@ class CoupAgent:
                     available_actions += assassin_actions
             if possible_captain_targets:
                 available_actions += captain_actions
-        desired_action = random.choice(
-            available_actions
-        )  # TODO implement RL logic later
-        return desired_action
+        action_mask = self.create_action_mask(available_actions)
+        action = self.select_action(self.state, action_mask)
+        return action
 
     def choose_challenge(
         self,
@@ -131,7 +175,8 @@ class CoupAgent:
                 can_be_challenged=False,
             ),
         ]
-        desired_challenge = random.choice(available_actions)
+        action_mask = self.create_action_mask(available_actions)
+        desired_challenge = self.select_action(self.state, action_mask)
         return desired_challenge
 
     def choose_counter(
@@ -192,5 +237,6 @@ class CoupAgent:
                     can_be_challenged=True,
                 )
             )
-        desired_counter = random.choice(available_actions)
+        action_mask = self.create_action_mask(available_actions)
+        desired_counter = self.select_action(self.state, action_mask)
         return desired_counter

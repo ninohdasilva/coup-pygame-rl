@@ -49,6 +49,8 @@ class Player(BaseModel):
                 | ActionType.FOREIGN_AID
                 | ActionType.COUP
                 | ActionType.DO_NOTHING
+                | ActionType.REVEAL_CARD_1
+                | ActionType.REVEAL_CARD_2
             ):
                 print(f"Action {action.action_type} is not a bluff")
                 return False, None
