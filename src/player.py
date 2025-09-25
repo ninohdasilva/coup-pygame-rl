@@ -23,7 +23,12 @@ class Player(BaseModel):
                     if card.character == Character.DUKE and not card.is_revealed:
                         return False, card
                 return True, None
-            case ActionType.ASSASSIN:
+            case (
+                ActionType.ASSASSIN_TARGET_PLAYER_0
+                | ActionType.ASSASSIN_TARGET_PLAYER_1
+                | ActionType.ASSASSIN_TARGET_PLAYER_2
+                | ActionType.ASSASSIN_TARGET_PLAYER_3
+            ):
                 for card in self.hand:
                     if card.character == Character.ASSASSIN and not card.is_revealed:
                         return False, card
@@ -33,7 +38,13 @@ class Player(BaseModel):
                     if card.character == Character.AMBASSADOR and not card.is_revealed:
                         return False, card
                 return True, None
-            case ActionType.CAPTAIN | ActionType.COUNTER_CAPTAIN_WITH_CAPTAIN:
+            case (
+                ActionType.CAPTAIN_TARGET_PLAYER_0
+                | ActionType.CAPTAIN_TARGET_PLAYER_1
+                | ActionType.CAPTAIN_TARGET_PLAYER_2
+                | ActionType.CAPTAIN_TARGET_PLAYER_3
+                | ActionType.COUNTER_CAPTAIN_WITH_CAPTAIN
+            ):
                 for card in self.hand:
                     if card.character == Character.CAPTAIN and not card.is_revealed:
                         return False, card
@@ -47,10 +58,18 @@ class Player(BaseModel):
                 ActionType.CHALLENGE
                 | ActionType.REVENUE
                 | ActionType.FOREIGN_AID
-                | ActionType.COUP
+                | ActionType.COUP_TARGET_PLAYER_0
+                | ActionType.COUP_TARGET_PLAYER_1
+                | ActionType.COUP_TARGET_PLAYER_2
+                | ActionType.COUP_TARGET_PLAYER_3
                 | ActionType.DO_NOTHING
                 | ActionType.REVEAL_CARD_1
                 | ActionType.REVEAL_CARD_2
+                | ActionType.DISCARD_CAPTAIN
+                | ActionType.DISCARD_AMBASSADOR
+                | ActionType.DISCARD_ASSASSIN
+                | ActionType.DISCARD_DUKE
+                | ActionType.DISCARD_CONTESSA
             ):
                 print(f"Action {action.action_type} is not a bluff")
                 return False, None

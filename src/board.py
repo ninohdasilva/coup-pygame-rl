@@ -34,7 +34,7 @@ class Board:
     game_has_ended: bool
     state_item_length = 128
     full_state_length = 392
-    state_item_width = 64
+    state_item_width = 128
     agents_states: np.ndarray
     actions_history: list[ActionHistoryItem]
     deck_history: list[DeckHistoryItem]
@@ -50,6 +50,12 @@ class Board:
     def get_player_by_id(self, id: int):
         return self.players[id]
 
+    def reveal_player_card(self, player: Player, action: Action):
+        card = player.hand[0 if action.action_type == ActionType.REVEAL_CARD_1 else 1]
+        card.is_revealed = True
+        self.extend_actions_history(action)
+        self.update_agent_states()
+
     def return_card_from_player_to_deck(self, card: Card, player: Player, public=False):
         self.deck.add_card(card)
         player.lose_card(card)
@@ -63,6 +69,7 @@ class Board:
             )
         )
         self.deck_history = self.deck_history[-self.state_item_length :]
+        self.update_agent_states()
 
     def draw_single_card_from_deck_to_player(self, player: Player):
         player.hand.append(self.deck.draw())
@@ -76,6 +83,7 @@ class Board:
             )
         )
         self.deck_history = self.deck_history[-self.state_item_length :]
+        self.update_agent_states()
 
     def start(self):
         self.game_has_started = True
@@ -118,6 +126,7 @@ class Board:
             )
         )
         self.actions_history = self.actions_history[-self.state_item_length :]
+        self.update_agent_states()
 
     def extend_deck_history(
         self,
@@ -137,6 +146,7 @@ class Board:
             )
         )
         self.deck_history = self.deck_history[-self.state_item_length :]
+        self.update_agent_states()
 
     def update_agent_states(self):
         """Convert the game state into a numerical representation"""
@@ -191,7 +201,9 @@ class Board:
                 np.concatenate(
                     [
                         hand_representation,
-                        np.zeros(self.state_item_width // 2),
+                        np.zeros(
+                            self.state_item_width - len(hand_representation)
+                        ),  # hand can have 2, 3 or 4 cards at a time due to ambassador
                     ]
                 )
             )
@@ -212,7 +224,10 @@ class Board:
                         for i in range(self.state_item_width // 4)
                     ]
             private_player_hands[player.id] = np.concatenate(
-                [hand_representation, np.zeros(self.state_item_width // 2)],
+                [
+                    hand_representation,
+                    np.zeros(self.state_item_width - len(hand_representation)),
+                ],
             )
 
         # Create actions history with proper shape (state_item_length x state_item_width)
@@ -468,16 +483,24 @@ class Board:
                 self.extend_actions_history(action)
                 self.update_agent_states()
             # Coup
-            elif action.action_type == ActionType.COUP:
+            elif (
+                action.action_type == ActionType.COUP_TARGET_PLAYER_0
+                or action.action_type == ActionType.COUP_TARGET_PLAYER_1
+                or action.action_type == ActionType.COUP_TARGET_PLAYER_2
+                or action.action_type == ActionType.COUP_TARGET_PLAYER_3
+            ):
                 target_player = self.get_player_by_id(action.target_player_id)
                 target_player_agent = self.agents[target_player.agent_id]
-                target_player_agent.choose_card_to_reveal(target_player.hand)
                 player.pay_coup(target_player)
                 last_actions.append(
                     f"{player.name} launched a Coup on {target_player.name}"
                 )
                 self.extend_actions_history(action)
                 self.update_agent_states()
+                card_to_reveal_action = target_player_agent.choose_card_to_reveal(
+                    target_player.hand
+                )
+                self.reveal_player_card(target_player, card_to_reveal_action)
         else:
             if action.can_be_challenged:
                 last_action = f"{player.name} tries to use {action.action_type}"
@@ -517,9 +540,15 @@ class Board:
                     is_bluffing, action_card = player.is_bluffing(action)
                     # Challenge successful
                     if is_bluffing:
-                        agent.choose_card_to_reveal(player.hand)
+                        card_to_reveal_action = agent.choose_card_to_reveal(player.hand)
+                        self.reveal_player_card(player, card_to_reveal_action)
                         # Player still pays for failed assassin action
-                        if action.action_type == ActionType.ASSASSIN:
+                        if (
+                            action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_0
+                            or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_1
+                            or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_2
+                            or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_3
+                        ):
                             player.lose_coins(3)
                         last_actions.append(
                             f"{player.name} was bluffing action {action.action_type} and lost an influence"
@@ -527,8 +556,13 @@ class Board:
                         self.update_agent_states()  # No action because it has failed due to the challenge
                     # Challenge failed
                     else:
-                        challenging_player_agent.choose_card_to_reveal(
-                            challenging_player.hand
+                        card_to_reveal_action = (
+                            challenging_player_agent.choose_card_to_reveal(
+                                challenging_player.hand
+                            )
+                        )
+                        self.reveal_player_card(
+                            challenging_player, card_to_reveal_action
                         )
                         last_actions.append(
                             f"{challenging_player.name} lost his challenge and lost an influence"
@@ -543,7 +577,12 @@ class Board:
                             last_actions.append(
                                 f"{player.name} gained 3 coins with duke"
                             )
-                        elif action.action_type == ActionType.CAPTAIN:
+                        elif (
+                            action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_0
+                            or action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_1
+                            or action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_2
+                            or action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_3
+                        ):
                             target_player = self.get_player_by_id(
                                 action.target_player_id
                             )
@@ -553,25 +592,45 @@ class Board:
                             last_actions.append(
                                 f"{player.name} successfully stole 2 coins from {target_player.name} with action {action.action_type}"
                             )
-                        elif action.action_type == ActionType.ASSASSIN:
+                        elif (
+                            action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_0
+                            or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_1
+                            or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_2
+                            or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_3
+                        ):
                             target_player = self.get_player_by_id(
                                 action.target_player_id
                             )
                             target_player_agent = self.agents[target_player.agent_id]
-                            target_player_agent.choose_card_to_reveal(
-                                target_player.hand
+                            card_to_reveal_action = (
+                                target_player_agent.choose_card_to_reveal(
+                                    target_player.hand
+                                )
+                            )
+                            self.reveal_player_card(
+                                target_player, card_to_reveal_action
                             )
                             player.pay_assassin()
                             last_actions.append(
                                 f"{player.name} successfully assassinated {target_player.name} with action {action.action_type}"
                             )
                         elif action.action_type == ActionType.AMBASSADOR:
-                            drawn_cards = self.deck.draw(2)
-                            unused_cards = agent.choose_cards_to_keep_after_ambassador(
-                                player.hand, drawn_cards
-                            )
-                            for card in unused_cards:
-                                self.return_card_from_player_to_deck(card, player)
+                            self.draw_single_card_from_deck_to_player(
+                                player
+                            )  # first draw
+                            self.draw_single_card_from_deck_to_player(
+                                player
+                            )  # second draw
+                            # player now has 4 cards in hand but will keep only 2
+                            # He discards them one by one and we update the states so that he bases his decision on fresh data
+                            for i in range(2):
+                                card_to_discard_action, card_to_discard = (
+                                    agent.choose_card_to_discard(player.hand)
+                                )
+                                self.return_card_from_player_to_deck(
+                                    card_to_discard, player
+                                )
+                                self.update_agent_states()
                             last_actions.append(
                                 f"{player.name} successfully exchanged 2 cards with action {action.action_type}"
                             )
@@ -625,8 +684,13 @@ class Board:
                         )
                         # Challenge successful
                         if is_bluffing:
-                            countering_player_agent.choose_card_to_reveal(
-                                countering_player.hand
+                            card_to_reveal_action = (
+                                countering_player_agent.choose_card_to_reveal(
+                                    countering_player.hand
+                                )
+                            )
+                            self.reveal_player_card(
+                                countering_player, card_to_reveal_action
                             )
                             last_actions.append(
                                 f"{countering_player.name} was bluffing for his counter and lost an influence"
@@ -637,7 +701,15 @@ class Board:
                                 last_actions.append(
                                     f"{player.name} successfully collected 2 coins with foreign aid"
                                 )
-                            elif action.action_type == ActionType.CAPTAIN:
+                            elif (
+                                action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_0
+                                or action.action_type
+                                == ActionType.CAPTAIN_TARGET_PLAYER_1
+                                or action.action_type
+                                == ActionType.CAPTAIN_TARGET_PLAYER_2
+                                or action.action_type
+                                == ActionType.CAPTAIN_TARGET_PLAYER_3
+                            ):
                                 target_player = self.get_player_by_id(
                                     action.target_player_id
                                 )
@@ -652,7 +724,10 @@ class Board:
                         # Challenge failed
                         else:
                             # Player loses an influence
-                            agent.choose_card_to_reveal(player.hand)
+                            card_to_reveal_action = agent.choose_card_to_reveal(
+                                player.hand
+                            )
+                            self.reveal_player_card(player, card_to_reveal_action)
                             last_actions.append(
                                 f"{player.name} lost his challenge and lost an influence"
                             )
@@ -679,7 +754,12 @@ class Board:
                         last_actions.append(
                             f"{player.name} successfully collected 2 coins with foreign aid"
                         )
-                    elif action.action_type == ActionType.CAPTAIN:
+                    elif (
+                        action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_0
+                        or action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_1
+                        or action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_2
+                        or action.action_type == ActionType.CAPTAIN_TARGET_PLAYER_3
+                    ):
                         target_player = self.get_player_by_id(action.target_player_id)
                         target_player.lose_coins(2)
                         player.gain_coins(2)
@@ -687,25 +767,40 @@ class Board:
                         last_actions.append(
                             f"{player.name} successfully stole 2 coins from {target_player.name} with CAPTAIN"
                         )
-                    elif action.action_type == ActionType.ASSASSIN:
+                    elif (
+                        action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_0
+                        or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_1
+                        or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_2
+                        or action.action_type == ActionType.ASSASSIN_TARGET_PLAYER_3
+                    ):
                         target_player = self.get_player_by_id(action.target_player_id)
                         target_player_agent = self.agents[target_player.agent_id]
-                        target_player_agent.choose_card_to_reveal(target_player.hand)
+                        card_to_reveal_action = (
+                            target_player_agent.choose_card_to_reveal(
+                                target_player.hand
+                            )
+                        )
+                        self.reveal_player_card(target_player, card_to_reveal_action)
                         player.pay_assassin()
                         last_actions.append(
                             f"{player.name} successfully assassinated {target_player.name} with ASSASSIN"
                         )
                     elif action.action_type == ActionType.AMBASSADOR:
-                        drawn_cards = self.deck.draw(2)
-                        unused_cards = agent.choose_cards_to_keep_after_ambassador(
-                            player.hand, drawn_cards
-                        )
-                        for card in unused_cards:
-                            self.return_card_from_player_to_deck(card, player)
+                        self.draw_single_card_from_deck_to_player(player)  # first draw
+                        self.draw_single_card_from_deck_to_player(player)  # second draw
+                        # player now has 4 cards in hand but will keep only 2
+                        # He discards them one by one and we update the states so that he bases his decision on fresh data
+                        for i in range(2):
+                            card_to_discard_action, card_to_discard = (
+                                agent.choose_card_to_discard(player.hand)
+                            )
+                            self.return_card_from_player_to_deck(
+                                card_to_discard, player
+                            )
+                            self.update_agent_states()
                         last_actions.append(
-                            f"{player.name} successfully exchanged 2 cards with AMBASSADOR"
+                            f"{player.name} successfully exchanged 2 cards with action {action.action_type}"
                         )
-                        self.update_agent_states()
         return last_actions
 
     def agents_next_move(self, last_actions: list[str], last_actions_max_length: int):
