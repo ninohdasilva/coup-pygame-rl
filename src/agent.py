@@ -119,22 +119,22 @@ class CoupAgent:
 
     def choose_card_to_reveal(self, hand: list[Card]) -> Card:
         if any(not card.is_revealed for card in hand):
-            available_actions = [
-                Action(
-                    action_type=ActionType.REVEAL_CARD_1,
-                    origin_player_id=self.player.id,
-                    target_player_id=-1,
-                    can_be_countered=False,
-                    can_be_challenged=False,
-                ),
-                Action(
-                    action_type=ActionType.REVEAL_CARD_2,
-                    origin_player_id=self.player.id,
-                    target_player_id=-1,
-                    can_be_countered=False,
-                    can_be_challenged=False,
-                ),
-            ]
+            available_actions = []
+            for i in range(2):
+                if not hand[i].is_revealed:
+                    if i == 0:
+                        action_type = ActionType.REVEAL_CARD_1
+                    else:
+                        action_type = ActionType.REVEAL_CARD_2
+                    available_actions.append(
+                        Action(
+                            action_type=action_type,
+                            origin_player_id=self.player.id,
+                            target_player_id=-1,
+                            can_be_countered=False,
+                            can_be_challenged=False,
+                        )
+                    )
             action_mask = self.create_action_mask(available_actions)
             action = self.select_action(self.state, action_mask, available_actions)
             return action
